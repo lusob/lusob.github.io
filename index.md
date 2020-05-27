@@ -1,37 +1,114 @@
-## Welcome to GitHub Pages
+Luis Sobrecueva Menéndez
+============
+-------------------        ----------------------------
+C/ Sant Joan de Malta 107  luis@sobrecueva.com
+Barcelona                  Spain (+34)62640490
+-------------------        ----------------------------
 
-You can use the [editor on GitHub](https://github.com/lusob/lusob.github.io/edit/master/index.md) to maintain and preview the content for your website in Markdown files.
+Education
+---------
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+**System Software Engineering**;  U.N.E.D. (National University of Distance Education)    
 
-### Markdown
+**Machine Learning online course** (Stanford University 2015)
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+**Foundation degree, Artificial Intelligence, Deep Learning Nanodegree** (Udacity 2017)
 
-```markdown
-Syntax highlighted code block
+**MicroMasters Program in Statistics and Data Science**; MIT (Massachusetts Institute of Technology) 2019 – 2020
+    https://courses.edx.org/certificates/a39e44e9077b4687b6fa6ff78d7f4350
 
-# Header 1
-## Header 2
-### Header 3
 
-- Bulleted
-- List
 
-1. Numbered
-2. List
+Work Experience
+----------
 
-**Bold** and _Italic_ and `Code` text
+**Lead Software Engineer at Infopraca.pl (Infojobs Poland)**, Oc.t 2017 – Present, Barcelona 
 
-[Link](url) and ![Image](src)
-```
+* Doing the complete migration and knowledge transferring of our code base, deployment and development process of India site to Indeed team (it was sold to them recently)
+* Coordinating a full remote developers team.
+* In charge of our recruitment process and mentoring of our new developers.
+* Research, implementation and release to production of a new concept based recommender using clustering algorithms to make jobs recommendations to the candidates based on their resumes and...
 
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
 
-### Jekyll Themes
+**Lead Developer at Careesma**, Apr. 2015 – Oct. 2017, Barcelona
 
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/lusob/lusob.github.io/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
+ Company: Careesma AKA Infojobs Poland (infopraca.pl), Austria (careesma.at) and India (careesma.in)
+ 
+* Coordinating a team of five developers (some of them remote).
+* Designing, and implementing scale-sensitive features (e.g., involving the deployment of new
+services).
+* Extending our code base, deployment and development process to add a new country job board
+portal.
+* Participating in the migration of our code base to a new stack (Python/Django), adapting our
+development tools and processes, and our release process.- In charge of our recruitment process
+and mentoring of our new developers.
+* Working with Spark to make jobs recommendations to the candidates based on their preferences
+* Applying deep learning analysis of our logs using TensorFlow/Keras to empower big data-driven
+decision-making in key areas (improve efficiency, attract customers and boost revenue).
 
-### Support or Contact
 
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+**Full Stack Engineer at Intercom World Wide**, Sep. 2008 - Apr. 2015, Barcelona
+
+Company: Intercom World Wide (Infojobs International)
+
+* Developing a high performance multilingual job search engine (>5.000.000 users and >30 million
+pages views per month) for Austria (careesma.at), Italy (infojobs.it), India (careesma.in) and
+Poland (infopraca.pl).
+
+* Working on Linux and GPL software, implementing several projects using a wide range of
+technologies, such as Python, Django, Php, C++, Solr (Lucene), MySql, Redis, Jenkins, etc.
+
+* Using agile methodologies (Scrum), continuous integration and test drive development in every
+project.
+
+
+**Software Engineer at Velneo**, Jul. 2005 - Sep. 2008, Gijón
+
+Company: Velneo S.L., (Gijón, Vigo, Madrid)
+
+Linux team leader: Involved in the development of the multithreading kernel, db engine, client/server
+module, and UI using the QT multi platform libraries.
+
+**Senior Developer at Atica Software**, Oct. 2001 - Jul. 2005, Gijón
+
+Company: Atica Software
+
+* Development Team member of Velazquez Visual platform, using Visual C and MFC libraries
+
+**Research fellow at ​Oviedo University**, Sept. 1999 - Sept.2001
+
+Company: Oviedo University (Engineering Project Area)
+
+Making several projects:
+
+* Development of an application for plotting and calculating perimeters by a laser meter (VBasic).
+* Programming of a weathering simulator for refractory spoons for the company Arcelor (Visual C
+and algorithm obtained by training neural networks).
+* Development of an application for the design and cutting of 3D furniture (Java and VRML).
+* Programming of a Voice IP program in the Irix 6 Operating System (Silicon Graphics).
+
+
+Relevant side projects:
+--------------------
+
+* Subzin: It is a Movie Quotes Search Engine ​http://www.subzin.com
+In this project I am making index optimization tests, performance analysis, scalability issues,
+usability experiments (a/b testing) and SEO:
+DB: > 80M rows, Traffic: >600K unique users per month (>450K organic users)
+I sold the project to an american company in 2017
+* QuoDB​: Single page app version of subzin (implemented with backbone for the frontend and
+Restler for the json API)
+* Open source projects and experiments: ​https://github.com/lusob
+
+Aditional information
+----------------------------------------
+
+Human Languages:
+
+* Spanish (native speaker)
+* English (professional working proficiency)
+
+More info:
+* http://www.linkedin.com/in/lusob
+* Velneo V7 UI​ lecture (some years ago): ​http://www.youtube.com/watch?v=yMQ4vsrAm5g
+* http://lusob.com​ Personal Blog (a little outdated)
