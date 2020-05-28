@@ -4,25 +4,6 @@ Luis Sobrecueva Menéndez
 C/ Sant Joan de Malta 107  luis@sobrecueva.com
 Barcelona                  Spain (+34)62640490
 
-Certified Education
-------------------
-
-**System Software Engineering**;  U.N.E.D. (National University of Distance Education)    
-
-**Foundation degree, Artificial Intelligence, Deep Learning Nanodegree** (Udacity 2017) [Certification](https://drive.google.com/file/d/0B_8oa-AtnwcURGlIYS00bWVCTGc/view)
-
-**MicroMasters Program in Statistics and Data Science**; MIT (Massachusetts Institute of Technology) 2019 – 2020 [Certification](https://courses.edx.org/certificates/a39e44e9077b4687b6fa6ff78d7f4350)
-
-Courses
--------
-
-**Machine Learning Coursera course** (Stanford University 2015)
-This 10 weeks [course](https://www.coursera.org/learn/machine-learning) provides a broad introduction to machine learning, data mining, and statistical pattern recognition.
-
-**Website performance optimization**
-This [course](https://www.udacity.com/course/website-performance-optimization--ud884) covers techniques used to optimize HTML, CSS and JavaScript in order to improve website page speed and user experience.
-
-
 Work Experience
 ----------
 
@@ -91,7 +72,6 @@ and algorithm obtained by training neural networks).
 * Development of an application for the design and cutting of 3D furniture (Java and VRML).
 * Programming of a Voice IP program in the Irix 6 Operating System (Silicon Graphics).
 
-
 Relevant side projects:
 --------------------
 
@@ -99,6 +79,24 @@ Relevant side projects:
 * [QuoDB](http://quodb.com): Single page app version of subzin (implemented with backbone for the frontend and
 Restler for the json API)
 * Open source projects and experiments: https://github.com/lusob
+
+Certified Education
+------------------
+
+**System Software Engineering**;  U.N.E.D. (National University of Distance Education)    
+
+**Foundation degree, Artificial Intelligence, Deep Learning Nanodegree** (Udacity 2017) [Certification](https://drive.google.com/file/d/0B_8oa-AtnwcURGlIYS00bWVCTGc/view)
+
+**MicroMasters Program in Statistics and Data Science**; MIT (Massachusetts Institute of Technology) 2019 – 2020 [Certification](https://courses.edx.org/certificates/a39e44e9077b4687b6fa6ff78d7f4350)
+
+Courses
+-------
+
+**Machine Learning Coursera course** (Stanford University 2015)
+This 10 weeks [course](https://www.coursera.org/learn/machine-learning) provides a broad introduction to machine learning, data mining, and statistical pattern recognition.
+
+**Website performance optimization**
+This [course](https://www.udacity.com/course/website-performance-optimization--ud884) covers techniques used to optimize HTML, CSS and JavaScript in order to improve website page speed and user experience.
 
 Aditional information
 ----------------------------------------
