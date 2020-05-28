@@ -3,20 +3,24 @@ Luis Sobrecueva Menéndez
 -------------------        ----------------------------
 C/ Sant Joan de Malta 107  luis@sobrecueva.com
 Barcelona                  Spain (+34)62640490
--------------------        ----------------------------
 
-Education
----------
+Certified Education
+------------------
 
 **System Software Engineering**;  U.N.E.D. (National University of Distance Education)    
 
-**Machine Learning online course** (Stanford University 2015)
+**Foundation degree, Artificial Intelligence, Deep Learning Nanodegree** (Udacity 2017) [Certification](https://drive.google.com/file/d/0B_8oa-AtnwcURGlIYS00bWVCTGc/view)
 
-**Foundation degree, Artificial Intelligence, Deep Learning Nanodegree** (Udacity 2017)
+**MicroMasters Program in Statistics and Data Science**; MIT (Massachusetts Institute of Technology) 2019 – 2020 [Certification](https://courses.edx.org/certificates/a39e44e9077b4687b6fa6ff78d7f4350)
 
-**MicroMasters Program in Statistics and Data Science**; MIT (Massachusetts Institute of Technology) 2019 – 2020
-    https://courses.edx.org/certificates/a39e44e9077b4687b6fa6ff78d7f4350
+Courses
+-------
 
+**Machine Learning Coursera course** (Stanford University 2015)
+This 10 weeks [course](https://www.coursera.org/learn/machine-learning) provides a broad introduction to machine learning, data mining, and statistical pattern recognition.
+
+**Website performance optimization**
+This [course](https://www.udacity.com/course/website-performance-optimization--ud884) covers techniques used to optimize HTML, CSS and JavaScript in order to improve website page speed and user experience.
 
 
 Work Experience
@@ -66,7 +70,7 @@ project.
 
 Company: Velneo S.L., (Gijón, Vigo, Madrid)
 
-Linux team leader: Involved in the development of the multithreading kernel, db engine, client/server
+* Linux team leader: Involved in the development of the multithreading kernel, db engine, client/server
 module, and UI using the QT multi platform libraries.
 
 **Senior Developer at Atica Software**, Oct. 2001 - Jul. 2005, Gijón
@@ -91,14 +95,10 @@ and algorithm obtained by training neural networks).
 Relevant side projects:
 --------------------
 
-* Subzin: It is a Movie Quotes Search Engine ​http://www.subzin.com
-In this project I am making index optimization tests, performance analysis, scalability issues,
-usability experiments (a/b testing) and SEO:
-DB: > 80M rows, Traffic: >600K unique users per month (>450K organic users)
-I sold the project to an american company in 2017
-* QuoDB​: Single page app version of subzin (implemented with backbone for the frontend and
+* [Subzin](http://www.subzin.com): It is a Movie Quotes Search Engine. In this project I am making index optimization tests, performance analysis, scalability issues, a/b testing and SEO (DB: > 80M rows, Traffic: >600K unique users/month, SEO: >450K organic users). I sold the project to an american company in 2017
+* [QuoDB](http://quodb.com): Single page app version of subzin (implemented with backbone for the frontend and
 Restler for the json API)
-* Open source projects and experiments: ​https://github.com/lusob
+* Open source projects and experiments: https://github.com/lusob
 
 Aditional information
 ----------------------------------------
@@ -110,5 +110,4 @@ Human Languages:
 
 More info:
 * http://www.linkedin.com/in/lusob
-* Velneo V7 UI​ lecture (some years ago): ​http://www.youtube.com/watch?v=yMQ4vsrAm5g
-* http://lusob.com​ Personal Blog (a little outdated)
+* [Velneo V7 UI](http://www.youtube.com/watch?v=yMQ4vsrAm5g) lecture (some years ago)
