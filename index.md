@@ -7,7 +7,10 @@ Barcelona                  Spain (+34)62640490
 Work Experience
 ----------
 
-**Lead Software Engineer at Infopraca.pl (Infojobs Poland)**, Oc.t 2017 – Present, Barcelona 
+**Software Engineer at Cabify**, Sep 2020 – Present, Remote 
+
+
+**Lead Software Engineer at Infopraca.pl (Infojobs Poland)**, Oct. 2017 – Aug. 2020, Barcelona 
 
 * Doing the complete migration and knowledge transferring of our code base, deployment and development process of India site to Indeed team (it was sold to them recently)
 * Coordinating a full remote developers team.
