@@ -1,8 +1,9 @@
 Luis Sobrecueva Menéndez
 ============
 -------------------        ----------------------------
-C/ Sant Joan de Malta 107  luis@sobrecueva.com
-Barcelona                  Spain (+34)62640490
+email: luis@sobrecueva.com
+
+Location: Remote, Spain 
 
 Work Experience
 ----------
@@ -100,6 +101,10 @@ This 10 weeks [course](https://www.coursera.org/learn/machine-learning) provides
 
 **Website performance optimization**
 This [course](https://www.udacity.com/course/website-performance-optimization--ud884) covers techniques used to optimize HTML, CSS and JavaScript in order to improve website page speed and user experience.
+
+Books
+-----
+Author of [Automated Machine Learning with Autokeras](https://www.amazon.com/Automated-Machine-Learning-AutoKeras-accessible/dp/1800567642)
 
 Aditional information
 ----------------------------------------
