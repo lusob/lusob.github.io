@@ -1,9 +1,9 @@
 Luis Sobrecueva Menéndez
 ============
 -------------------        ----------------------------
-email: luis@sobrecueva.com
+luis@sobrecueva.com
 
-Location: Remote, Spain 
+Remote, Spain 
 
 Work Experience
 ----------
