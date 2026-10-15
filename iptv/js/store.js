@@ -39,14 +39,17 @@ function tx(mode, fn) {
   }));
 }
 
+// Never blocks the app: some browsers leave IndexedDB requests hanging.
+const within = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+
 export async function cacheGet(key) {
-  try { return await tx('readonly', s => s.get(key)); } catch { return null; }
+  try { return await within(tx('readonly', s => s.get(key)), 4000); } catch { return null; }
 }
 
 export async function cachePut(key, value) {
-  try { await tx('readwrite', s => s.put(value, key)); } catch {}
+  try { await within(tx('readwrite', s => s.put(value, key)), 15000); } catch {}
 }
 
 export async function cacheClear() {
-  try { await tx('readwrite', s => s.clear()); } catch {}
+  try { await within(tx('readwrite', s => s.clear()), 4000); } catch {}
 }

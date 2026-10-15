@@ -1,10 +1,11 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js';
-import * as store from './store.js';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js';
-import { Player } from './player.js';
-import { Epg, hhmm } from './epg.js';
-import { Mosaic } from './mosaic.js';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016a';
+import * as store from './store.js?v=20261016a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016a';
+import { Player } from './player.js?v=20261016a';
+import { Epg, hhmm } from './epg.js?v=20261016a';
+import { Mosaic } from './mosaic.js?v=20261016a';
 
+const VERSION = '2026-10-16';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all';
 const MAX_AGE = 12 * 3600e3;   // refetch lists older than 12 h
@@ -246,6 +247,7 @@ async function loadData(type, force) {
   // Empty cached lists are ignored (an earlier version could cache a failed load as empty).
   const usable = cached?.items?.length ? cached : null;
   if (usable && !force && Date.now() - usable.ts < MAX_AGE) return (data[type] = build(usable));
+  if (type !== 'live') return loadLazy(type, key, force ? null : usable);
   if (force) delete data[type];
   const label = `Cargando ${TYPES[type].toLowerCase()}…`;
   const progress = { text: label };
@@ -271,6 +273,89 @@ async function loadData(type, force) {
   return data[type];
 }
 
+// Movies / series: catalogs can be huge, so (like IPTVnator) the folders come first and each
+// folder is loaded when opened; the full catalog (needed for "newest first" across folders)
+// downloads in the background and replaces the partial view when it arrives.
+async function loadLazy(type, key, stale) {
+  if (stale) {
+    data[type] = build(stale);
+    loadFull(type, key, null);
+    return data[type];
+  }
+  delete data[type];
+  const stop = paneLoading(type, { text: `Cargando carpetas de ${TYPES[type].toLowerCase()}…` });
+  try {
+    const cats = await api.categories(type);
+    if (!cats.length) {
+      // No categories: only the full list can work.
+      stop();
+      const fresh = await api.fetchType(type);
+      fresh.ts = Date.now();
+      if (fresh.items.length) store.cachePut(key, fresh);
+      return (data[type] = build(fresh));
+    }
+    const partial = { cats, byId: new Map(), loaded: new Set(), loading: new Set(), errors: new Map(), fullLoading: true, fullError: '' };
+    data[type] = build({ cats, items: [] }, partial);
+    loadFull(type, key, cats);
+  } catch (ex) {
+    data[type] = build({ cats: [], items: [] });
+    data[type].error = ex.message;
+    data[type].diag = [ex.detail, api.diag].filter(Boolean).join(' · ');
+  } finally {
+    stop();
+  }
+  return data[type];
+}
+
+function loadFull(type, key, cats) {
+  const a = api, d0 = data[type];
+  // Opening folders rebuilds data[type] but keeps the same `partial` object.
+  const same = () => api === a && data[type] && (data[type].partial || data[type]) === (d0.partial || d0);
+  a.streams(type, null, { timeout: 180000, retries: 1 }).then(async items => {
+    if (!items.length) throw new Error('lista completa vacía');
+    cats ||= await a.categories(type);
+    const fresh = { cats, items, ts: Date.now() };
+    store.cachePut(key, fresh);
+    if (!same()) return;
+    data[type] = build(fresh);
+    if (ui.tab === type) { renderFolders(); if (!series) refreshItems(false); }
+  }).catch(ex => {
+    if (!same() || !d0.partial) return;
+    d0.partial.fullLoading = false;
+    d0.partial.fullError = `${ACTION_NAMES[type]}: ${ex.message}`;
+    if (ui.tab === type && !series) refreshItems(false);
+  });
+}
+
+const ACTION_NAMES = { vod: 'get_vod_streams', series: 'get_series' };
+
+async function loadFolder(type, id) {
+  const d = data[type];
+  const p = d?.partial;
+  if (!p || p.loaded.has(id) || p.loading.has(id)) return;
+  p.loading.add(id);
+  p.errors.delete(id);
+  try {
+    const items = await api.streams(type, id, { timeout: 90000, retries: 2 });
+    for (const it of items) {
+      const prev = p.byId.get(it.id);
+      if (prev) { for (const c of it.cats) if (!prev.cats.includes(c)) prev.cats.push(c); }
+      else p.byId.set(it.id, it);
+    }
+    p.loaded.add(id);
+  } catch (ex) {
+    p.errors.set(id, ex.message);
+  } finally {
+    p.loading.delete(id);
+  }
+  if (data[type] !== d) return;
+  data[type] = build({ cats: p.cats, items: [...p.byId.values()] }, p);
+  if (ui.tab === type) {
+    renderFolders();
+    if (!series && !query && ui.folder[type] === id) refreshItems(false);
+  }
+}
+
 // Loading state inside the list pane (with elapsed time), so other tabs stay usable.
 function paneLoading(type, progress) {
   const t0 = Date.now();
@@ -288,7 +373,7 @@ function paneLoading(type, progress) {
 }
 
 // Folders and items newest first; a folder is as recent as its newest item.
-function build({ cats, items }) {
+function build({ cats, items }, partial = null) {
   items = items.slice().sort((a, b) => b.added - a.added);
   const folderById = new Map(cats.map(c => [c.id, { id: c.id, name: c.name, items: [], adult: isAdultName(c.name) }]));
   const byId = new Map();
@@ -308,7 +393,7 @@ function build({ cats, items }) {
     it.hide = !!it.adult || (known.length > 0 && known.every(f => f.adult));
   }
   if (other) folderById.set(other.id, other);
-  const folders = [...folderById.values()].filter(f => f.items.length);
+  const folders = [...folderById.values()].filter(f => partial || f.items.length);
   for (const f of folders) {
     f.safe = f.adult ? [] : f.items.filter(i => !i.hide);
     f.date = f.items[0]?.added || 0;
@@ -316,12 +401,14 @@ function build({ cats, items }) {
   }
   const safeItems = items.filter(i => !i.hide);
   const hasAdult = items.length !== safeItems.length || folders.some(f => f.adult);
-  return { items, safeItems, folders, folderById, byId, hasAdult };
+  return { items, safeItems, folders, folderById, byId, hasAdult, partial };
 }
 
 const visItems = d => unlocked ? d.items : d.safeItems;
 const folderItems = f => unlocked ? f.items : f.safe;
 const folderDate = f => unlocked ? f.date : f.safeDate;
+const pending = (d, f) => !!d.partial && !d.partial.loaded.has(f.id) && (unlocked || !f.adult);   // not loaded yet
+const folderVisible = (d, f) => folderItems(f).length > 0 || pending(d, f);
 
 // ---------------------------------------------------------------- tabs & folders
 
@@ -346,7 +433,7 @@ async function selectTab(type) {
   renderFolders(false);
   const d = data[type];
   let f = ui.folder[type] || ALL;
-  if (f !== FAV && f !== ALL && !(d.folderById.has(f) && folderItems(d.folderById.get(f)).length)) f = ALL;
+  if (f !== FAV && f !== ALL && !(d.folderById.has(f) && folderVisible(d, d.folderById.get(f)))) f = ALL;
   ui.folder[type] = f;
   refreshItems(true);
 }
@@ -358,9 +445,9 @@ function renderFolders(keepScroll = true) {
   const fi = favs[ui.tab].items;
   const all = visItems(d);
   const favItems = all.filter(i => fi.has(i.id));
-  const folders = d.folders
-    .filter(f => folderItems(f).length)
-    .sort((a, b) => folderDate(b) - folderDate(a));
+  // Partial catalog: dates are unknown until the full list arrives, keep the server order.
+  const folders = d.folders.filter(f => folderVisible(d, f));
+  if (!d.partial) folders.sort((a, b) => folderDate(b) - folderDate(a));
   const rows = [
     { id: FAV, name: '★ Favoritos', count: favItems.length, date: favItems[0]?.added, virtual: true },
     { id: ALL, name: 'Todo', count: all.length, date: all[0]?.added, virtual: true },
@@ -379,7 +466,10 @@ function renderFolderRow(f) {
   const active = (ui.folder[ui.tab] || ALL) === f.id && !query;
   const count = f.virtual ? f.count : folderItems(f).length;
   const date = f.virtual ? f.date : folderDate(f);
-  const meta = [count + (count === 1 ? ' elemento' : ' elementos'), ago(date)].filter(Boolean).join(' · ');
+  const p = data[ui.tab].partial;
+  const meta = !f.virtual && pending(data[ui.tab], f)
+    ? (p.loading.has(f.id) ? 'Cargando…' : p.errors.has(f.id) ? 'Error · toca para reintentar' : 'Toca para abrir')
+    : [count + (count === 1 ? ' elemento' : ' elementos'), ago(date)].filter(Boolean).join(' · ');
   return `<div class="row${active ? ' active' : ''}">
     <div class="grow"><div class="name">${esc(f.name)}</div><div class="meta">${meta}</div></div>
     ${isNew(date) && f.id !== FAV ? '<span class="badge">Nuevo</span>' : ''}
@@ -399,6 +489,7 @@ async function onFolderClick(f, i, act) {
     return;
   }
   if (query) { query = ''; $('#search').value = ''; }
+  data[ui.tab]?.partial?.errors.delete(f.id);
   ui.folder[ui.tab] = f.id;
   saveUi();
   closeSeries();
@@ -429,6 +520,7 @@ function refreshItems(resetScroll) {
     const f = d.folderById.get(id);
     list = f ? folderItems(f) : [];
     title = f?.name || '';
+    if (f && pending(d, f) && !d.partial.errors.has(f.id)) loadFolder(ui.tab, f.id);
   }
   if (!series) {
     $('#listTitle').textContent = title;
@@ -448,15 +540,37 @@ function refreshItems(resetScroll) {
     itemList.set(list, resetScroll);
   }
 
+  // Empty pane: why, plus a retry when it makes sense.
+  const p = d.partial;
+  const f = d.folderById.get(id);
+  let text, diag = '';
+  retryAction = reload;
+  if (d.error) {
+    text = `No se pudo cargar la lista: ${d.error}`;
+    diag = d.diag;
+  } else if (query) {
+    text = p ? 'Sin resultados en las carpetas cargadas' + (p.fullLoading ? ' (el catálogo completo aún se está descargando)' : '') : 'Sin resultados';
+  } else if (id === FAV) {
+    text = 'Aún no hay favoritos. Pulsa ★ en cualquier elemento.' + (p ? ' Los de carpetas aún no abiertas aparecerán al cargar el catálogo.' : '');
+  } else if (p && f && pending(d, f)) {
+    const err = p.errors.get(f.id);
+    text = err ? `No se pudo cargar la carpeta: ${err}` : '<span class="spinner small"></span>Cargando carpeta…';
+    if (err) { diag = `${ACTION_NAMES[ui.tab]}&category_id=${f.id}`; retryAction = () => loadFolder(ui.tab, f.id).then(() => refreshItems(false)); }
+  } else if (p && id === ALL) {
+    text = p.fullLoading ? '<span class="spinner small"></span>Descargando el catálogo completo… Mientras tanto, abre cualquier carpeta.'
+      : 'El catálogo completo no está disponible; abre las carpetas de una en una.';
+    diag = p.fullError;
+  } else {
+    text = 'No hay elementos';
+    if (!d.items.length) diag = d.diag || 'el servidor devolvió una lista vacía';
+  }
   $('#empty').hidden = !!list.length || !!series;
-  $('#emptyRetry').hidden = !d.error;
-  $('#emptyText').textContent = d.error ? `No se pudo cargar la lista: ${d.error}`
-    : query ? 'Sin resultados'
-    : id === FAV ? 'Aún no hay favoritos. Pulsa ★ en cualquier elemento.'
-    : 'No hay elementos';
-  $('#emptyDiag').textContent = d.error || (!d.items.length && !query) ? `Detalle: ${d.diag || 'el servidor devolvió una lista vacía'}` : '';
-  if (!d.error && !d.items.length) $('#emptyRetry').hidden = false;
+  $('#emptyText').innerHTML = text.startsWith('<span') ? text : esc(text);
+  $('#emptyDiag').textContent = diag ? `Detalle: ${diag}` : '';
+  $('#emptyRetry').hidden = !(d.error || diag || (!d.items.length && !p));
 }
+
+let retryAction = null;
 
 function folderName(it) {
   for (const c of it.cats) {
@@ -701,7 +815,7 @@ async function reload() {
 }
 
 $('#refresh').addEventListener('click', reload);
-$('#emptyRetry').addEventListener('click', reload);
+$('#emptyRetry').addEventListener('click', () => (retryAction || reload)());
 
 // ---------------------------------------------------------------- settings
 
@@ -713,7 +827,9 @@ $('#settingsBtn').addEventListener('click', () => {
     if (u.max_connections) lines.push(`Conexiones: ${esc(u.active_cons ?? 0)} / ${esc(u.max_connections)}`);
     if (u.status) lines.push(`Estado: ${esc(u.status)}`);
   }
+  lines.push(`<span class="dim">Versión de la app: ${VERSION}</span>`);
   $('#accountInfo').innerHTML = lines.join('<br>');
+  $('#diagOut').hidden = true;
   $('#proxyInput').value = api.proxy;
   $('#bufferInput').value = String(settings.buffer);
   $('#bufferMaxInput').value = String(settings.bufferMax);
@@ -753,6 +869,34 @@ $('#settings').addEventListener('close', async () => {
   } else if (v === 'logout') {
     logout();
   }
+});
+
+// Connection test: every list request with its time, size and number of items.
+$('#diagBtn').addEventListener('click', async () => {
+  const out = $('#diagOut');
+  const btn = $('#diagBtn');
+  out.hidden = false;
+  btn.disabled = true;
+  const lines = [`App ${VERSION} · ${navigator.userAgent.match(/Chrome\/[\d.]+/)?.[0] || ''}`];
+  const show = () => { out.textContent = lines.join('\n'); out.scrollTop = out.scrollHeight; };
+  const run = async (label, action, extra, timeout) => {
+    lines.push(`${label}: …`); show();
+    lines[lines.length - 1] = `${label}: ${await api.probe(action, extra, timeout)}`; show();
+  };
+  await run('login', null, {}, 30000);
+  for (const t of ['vod', 'series']) {
+    const [ca, ia] = t === 'vod' ? ['get_vod_categories', 'get_vod_streams'] : ['get_series_categories', 'get_series'];
+    await run(ca, ca, {}, 45000);
+    const first = data[t]?.partial?.cats[0] || data[t]?.folders[0];
+    if (first) await run(`${ia} (carpeta ${first.name})`, ia, { category_id: first.id }, 90000);
+    await run(`${ia} (completa)`, ia, {}, 180000);
+  }
+  for (const t of ['vod', 'series']) {
+    const d = data[t];
+    lines.push(`${TYPES[t]} en la app: ${!d ? 'sin cargar' : d.error ? `error: ${d.error} (${d.diag || ''})` : `${d.items.length} elementos, ${d.folders.length} carpetas${d.partial ? `, por carpetas (completa: ${d.partial.fullLoading ? 'descargando' : d.partial.fullError || 'ok'})` : ''}`}`);
+  }
+  show();
+  btn.disabled = false;
 });
 
 // ---------------------------------------------------------------- boot

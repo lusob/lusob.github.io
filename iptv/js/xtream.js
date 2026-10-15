@@ -92,51 +92,76 @@ export class Xtream {
     return d;
   }
 
+  async categories(type) {
+    const action = ACTIONS[type][0];
+    let raw;
+    try {
+      raw = toArray(await this.api(action, {}, { timeout: 45000, retries: 2 }));
+    } catch (e) {
+      throw withStep(e, action);
+    }
+    if (!raw) throw withStep(new Error('Respuesta con formato inesperado'), action);
+    return raw.filter(c => c && typeof c === 'object').map(c => ({ id: String(c.category_id), name: String(c.category_name ?? '') }));
+  }
+
+  // Items of one category, or of the whole section when catId is null.
+  async streams(type, catId = null, opt = {}) {
+    const action = ACTIONS[type][1];
+    const raw = toArray(await this.api(action, catId == null ? {} : { category_id: catId }, opt));
+    if (!raw) throw new Error('Respuesta con formato inesperado');
+    return dedupe(type, raw, catId);
+  }
+
   // Lists the whole section in one request; if that fails or comes back empty (huge list on a
   // struggling server), falls back to one lighter request per category.
   async fetchType(type, onProgress) {
-    const [catAction, itemAction] = ACTIONS[type];
-    let rawCats;
+    const itemAction = ACTIONS[type][1];
+    const cats = await this.categories(type);
+    let items, fullError = null;
     try {
-      rawCats = toArray(await this.api(catAction));
-    } catch (e) {
-      throw withStep(e, `${catAction}`);
-    }
-    const cats = (rawCats || []).map(c => ({ id: String(c.category_id), name: String(c.category_name ?? '') }));
-    let raw, fullError = null;
-    try {
-      raw = toArray(await this.api(itemAction, {}, { timeout: 120000, retries: 1 }));
-      if (!raw) fullError = new Error('Respuesta con formato inesperado');
-      else if (!raw.length && cats.length) fullError = new Error('Lista completa vacía');
+      items = await this.streams(type, null, { timeout: 120000, retries: 1 });
+      if (!items.length && cats.length) fullError = new Error('Lista completa vacía');
     } catch (e) {
       fullError = e;
     }
     this.diag = fullError ? `${itemAction}: ${fullError.message}` : '';
     if (fullError) {
       if (!cats.length) throw withStep(fullError, itemAction);
-      raw = [];
+      const raw = [];
       let done = 0, ok = 0, lastErr = null;
       onProgress?.(0, cats.length);
       await pool(cats, 3, async c => {
         try {
-          const r = toArray(await this.api(itemAction, { category_id: c.id }, { timeout: 60000, retries: 2 }));
-          if (r) { for (const x of r) raw.push(x); ok++; }
+          for (const x of await this.streams(type, c.id, { timeout: 60000, retries: 2 })) raw.push(x);
+          ok++;
         } catch (e) { lastErr = e; }
         onProgress?.(++done, cats.length);
       });
       this.diag += ` · por carpetas: ${ok}/${cats.length} ok${lastErr ? ` (${lastErr.message})` : ''}`;
       if (!ok) throw withStep(lastErr || fullError, `${itemAction} (completa y por carpetas)`);
+      items = merge(raw);
     }
-    const seen = new Map();
-    for (const s of raw) {
-      if (!s || typeof s !== 'object') continue;
-      const it = normalize(type, s);
-      if (!it.id || it.id === 'undefined') continue;
-      const prev = seen.get(it.id);
-      if (prev) { for (const c of it.cats) if (!prev.cats.includes(c)) prev.cats.push(c); }
-      else seen.set(it.id, it);
+    return { cats, items };
+  }
+
+  // Diagnostics: time, size and item count of one API call.
+  async probe(action, extra = {}, timeout = 120000) {
+    const q = new URLSearchParams({ username: this.username, password: this.password, ...extra });
+    if (action) q.set('action', action);
+    const t0 = performance.now();
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), timeout);
+      const res = await fetch(this.wrap(`${this.server}/player_api.php?${q}`), { signal: ctl.signal });
+      const text = await res.text();
+      clearTimeout(timer);
+      const ms = Math.round(performance.now() - t0);
+      let count = '?';
+      try { const j = JSON.parse(text); const a = toArray(j); count = a ? a.length : (j && typeof j === 'object' ? 'objeto' : typeof j); } catch { count = 'no es JSON'; }
+      return `HTTP ${res.status} · ${ms} ms · ${fmtBytes(text.length)} · ${count}`;
+    } catch (e) {
+      return `ERROR ${e.name === 'AbortError' ? 'tiempo agotado' : e.message} · ${Math.round(performance.now() - t0)} ms`;
     }
-    return { cats, items: [...seen.values()] };
   }
 
   seriesInfo(id) {
@@ -151,6 +176,32 @@ export class Xtream {
       start: +l.start_timestamp || Date.parse(l.start) / 1000 || 0,
       end: +l.stop_timestamp || Date.parse(l.end || l.stop) / 1000 || 0,
     })).filter(p => p.start && p.end).sort((a, b) => a.start - b.start);
+  }
+
+  // Full guide of a channel (past and future), with has_archive per programme.
+  async epgTable(id) {
+    const d = await this.api('get_simple_data_table', { stream_id: id }, { timeout: 30000, retries: 1 });
+    return (d?.epg_listings || []).map(l => ({
+      title: b64(l.title),
+      desc: b64(l.description),
+      start: +l.start_timestamp || Date.parse(l.start) / 1000 || 0,
+      end: +l.stop_timestamp || Date.parse(l.end || l.stop) / 1000 || 0,
+      archive: String(l.has_archive) === '1',
+    })).filter(p => p.start && p.end).sort((a, b) => a.start - b.start);
+  }
+
+  // Catch-up: the provider's recording of channel `id` from `start` (unix s) for `minutes`.
+  // The start time is written in the server's timezone (+ an optional manual shift in hours).
+  timeshift(id, start, minutes, shiftHours = 0) {
+    const t = formatTs(start + shiftHours * 3600, this.info?.server_info?.timezone);
+    const u = encodeURIComponent(this.username), p = encodeURIComponent(this.password);
+    const m = Math.max(1, Math.ceil(minutes));
+    const q = new URLSearchParams({ username: this.username, password: this.password, stream: id, start: t, duration: m });
+    return [
+      ['mpegts', this.wrap(`${this.server}/timeshift/${u}/${p}/${m}/${t}/${id}.ts`)],
+      ['mpegts', this.wrap(`${this.server}/streaming/timeshift.php?${q}`)],
+      ['hls', this.wrap(`${this.server}/timeshift/${u}/${p}/${m}/${t}/${id}.m3u8`)],
+    ];
   }
 
   path(kind, id, ext) {
@@ -176,6 +227,31 @@ function toArray(x) {
   return null;
 }
 
+function dedupe(type, raw, catId) {
+  const out = [];
+  for (const s of raw) {
+    if (!s || typeof s !== 'object') continue;
+    const it = normalize(type, s);
+    if (!it.id || it.id === 'undefined') continue;
+    if (catId != null && !it.cats.includes(String(catId))) it.cats.push(String(catId));
+    out.push(it);
+  }
+  return merge(out);
+}
+
+// One entry per id, with the union of its categories.
+function merge(items) {
+  const seen = new Map();
+  for (const it of items) {
+    const prev = seen.get(it.id);
+    if (prev) { for (const c of it.cats) if (!prev.cats.includes(c)) prev.cats.push(c); }
+    else seen.set(it.id, it);
+  }
+  return [...seen.values()];
+}
+
+const fmtBytes = n => n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' KB';
+
 function withStep(e, step) {
   const err = new Error(e.message);
   err.detail = step;
@@ -196,6 +272,15 @@ function b64(s) {
   } catch {
     return String(s);
   }
+}
+
+// "YYYY-MM-DD:HH-MM" in the given timezone (local time if unknown).
+function formatTs(sec, tz) {
+  const opt = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+  let f;
+  try { f = new Intl.DateTimeFormat('en-CA', { ...opt, timeZone: tz || undefined }); } catch { f = new Intl.DateTimeFormat('en-CA', opt); }
+  const v = Object.fromEntries(f.formatToParts(new Date(sec * 1000)).map(x => [x.type, x.value]));
+  return `${v.year}-${v.month}-${v.day}:${v.hour === '24' ? '00' : v.hour}-${v.minute}`;
 }
 
 function catIds(s) {
@@ -224,6 +309,7 @@ function normalize(type, s) {
     added: +s.added || 0,
     adult,
   };
+  if (type === 'live') it.archive = String(s.tv_archive) === '1' ? (+s.tv_archive_duration || 1) : 0;   // days of catch-up
   if (type === 'vod') {
     it.ext = s.container_extension || 'mp4';
     it.rating = s.rating || '';
