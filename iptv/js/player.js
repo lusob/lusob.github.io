@@ -1,12 +1,24 @@
 // Fullscreen overlay player. Each item resolves to a list of attempts ([engine, url]);
 // on a fatal error the next attempt is tried (e.g. hls.js → native HLS → mpegts.js).
+// Built for slow/overloaded servers: long timeouts, retry rounds with backoff, and a stall
+// watchdog that reconnects when playback freezes.
+
+import { startEngine, resetVideo } from './engines.js';
+
+const ROUNDS = 3;            // passes over all engines before giving up on the first load
+const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
+const LOAD_TIMEOUT = 60;     // s without playback before an attempt is considered failed
 
 export class Player {
-  constructor(root) {
+  // getSettings() → { buffer: seconds }
+  constructor(root, getSettings) {
     this.root = root;
+    this.getSettings = getSettings;
     this.video = root.querySelector('video');
     this.title = root.querySelector('#pTitle');
+    this.info = root.querySelector('#pInfo');
     this.msgEl = root.querySelector('#pMsg');
+    this.retryBtn = root.querySelector('#pRetry');
     this.prevBtn = root.querySelector('#pPrev');
     this.nextBtn = root.querySelector('#pNext');
     this.token = 0;
@@ -15,19 +27,19 @@ export class Player {
     root.querySelector('#pClose').onclick = () => this.close();
     this.prevBtn.onclick = () => this.step(-1);
     this.nextBtn.onclick = () => this.step(1);
+    this.retryBtn.onclick = () => this.load();
     root.querySelector('#pFs').onclick = () => this.fullscreen();
 
-    this.video.addEventListener('playing', () => this.msg(''));
-    this.video.addEventListener('timeupdate', () => {
-      if (this.msgEl.textContent === 'Cargando…' && !this.video.paused) this.msg('');
-    });
-    this.video.addEventListener('waiting', () => this.msg('Cargando…'));
+    const v = this.video;
+    v.addEventListener('playing', () => this.onPlaying());
+    v.addEventListener('timeupdate', () => { if (!v.paused && v.currentTime > this.lastTime + 0.2) this.onPlaying(); });
+    v.addEventListener('waiting', () => this.onWaiting());
 
     // Show the bar on interaction, hide it after a few seconds of playback.
     const wake = () => {
       root.classList.remove('idle');
       clearTimeout(this.idleTimer);
-      this.idleTimer = setTimeout(() => { if (!this.video.paused) root.classList.add('idle'); }, 3500);
+      this.idleTimer = setTimeout(() => { if (!v.paused) root.classList.add('idle'); }, 4000);
     };
     ['pointerdown', 'pointermove', 'keydown'].forEach(ev => root.addEventListener(ev, wake));
     this.wake = wake;
@@ -43,7 +55,10 @@ export class Player {
     });
   }
 
-  // queue: items; resolve(item) → { title, attempts: [[engine, url], ...] }
+  get isOpen() { return !this.root.hidden; }
+  get current() { return this.queue?.[this.index]; }
+
+  // queue: items; resolve(item) → { title, live, attempts: [[engine, url], ...] }
   open(queue, index, resolve) {
     this.queue = queue;
     this.index = index;
@@ -61,78 +76,131 @@ export class Player {
   }
 
   load() {
-    const { title, attempts } = this.resolve(this.queue[this.index]);
+    const { title, live, attempts } = this.resolve(this.current);
     this.title.textContent = title;
+    this.setInfo('');
     this.prevBtn.disabled = this.index <= 0;
     this.nextBtn.disabled = this.index >= this.queue.length - 1;
+    this.live = !!live;
     this.attempts = attempts;
+    this.round = 0;
+    this.reconnects = 0;
+    this.played = false;
+    this.resumeAt = 0;
     this.wake();
-    this.attempt(0);
+    this.onchange?.(this.current);
+    this.attempt(0, 'Conectando…');
   }
 
-  attempt(i) {
+  setInfo(html) {
+    this.info.innerHTML = html;
+    this.info.hidden = !html;
+  }
+
+  attempt(i, status) {
     this.teardown();
     const tok = ++this.token;
-    if (i >= this.attempts.length) {
-      this.msg('No se pudo reproducir. Si el servidor es http:// o no permite CORS, configura un proxy en Ajustes.');
-      return;
-    }
+    this.cur = i;
+    this.lastTime = 0;
+    this.status(status);
+    this.retryBtn.hidden = true;
+    this.armTimer(LOAD_TIMEOUT);
+    const fail = () => { if (tok === this.token) this.failed(); };
+    this.failNow = fail;
     const [engine, url] = this.attempts[i];
-    let failed = false;
-    const fail = () => {
-      if (tok !== this.token || failed) return;
-      failed = true;
-      this.attempt(i + 1);
-    };
-    this.msg('Cargando…');
+    const buffer = Math.max(2, +this.getSettings().buffer || 10);
+    this.engine = startEngine(this.video, engine, url, {
+      buffer,
+      resumeAt: this.resumeAt,
+      prebuffer: this.live && engine === 'mpegts' ? Math.min(buffer, 10) : 0,
+      onStatus: t => { if (tok === this.token) { this.stopTicker(); this.msg(t); } },
+    }, fail);
+  }
+
+  failed() {
     const v = this.video;
-
-    if (engine === 'hls') {
-      const Hls = window.Hls;
-      if (!Hls?.isSupported()) return fail();
-      const hls = this.hls = new Hls({ enableWorker: true, lowLatencyMode: false, backBufferLength: 30 });
-      let recovered = false;
-      hls.on(Hls.Events.ERROR, (_, d) => {
-        if (!d.fatal) return;
-        if (d.type === Hls.ErrorTypes.MEDIA_ERROR && !recovered) { recovered = true; hls.recoverMediaError(); }
-        else fail();
-      });
-      hls.on(Hls.Events.MANIFEST_PARSED, () => this.play());
-      hls.loadSource(url);
-      hls.attachMedia(v);
-    } else if (engine === 'native-hls') {
-      if (!v.canPlayType('application/vnd.apple.mpegurl')) return fail();
-      v.onerror = fail;
-      v.src = url;
-      this.play();
-    } else if (engine === 'mpegts') {
-      const m = window.mpegts;
-      if (!m?.getFeatureList?.().mseLivePlayback) return fail();
-      const p = this.mp = m.createPlayer({ type: 'mpegts', isLive: true, url }, { enableWorker: true, liveBufferLatencyChasing: true });
-      p.on(m.Events.ERROR, fail);
-      p.attachMediaElement(v);
-      p.load();
-      this.play();
+    if (!this.live && v.currentTime > 1) this.resumeAt = v.currentTime;
+    let next, label, delay;
+    if (this.played) {
+      // Was playing: reconnect with the same engine.
+      if (++this.reconnects > MAX_RECONNECTS) return this.giveUp('Se ha perdido la conexión con el canal.');
+      next = this.cur;
+      label = `Reconectando… (${this.reconnects}/${MAX_RECONNECTS})`;
+      delay = Math.min(1000 * this.reconnects, 5000);
     } else {
-      v.onerror = fail;
-      v.src = url;
-      this.play();
+      // Never played: next engine, then further rounds with increasing pauses.
+      next = this.cur + 1;
+      delay = 0;
+      if (next >= this.attempts.length) {
+        if (++this.round >= ROUNDS) {
+          return this.giveUp('No se pudo reproducir. El servidor puede estar saturado; prueba de nuevo en un momento. ' +
+            'Si es http:// o no permite CORS, configura un proxy en Ajustes.');
+        }
+        next = 0;
+        delay = 3000 * this.round;
+      }
+      label = this.round ? `Servidor lento, reintentando (${this.round + 1}/${ROUNDS})…` : 'Conectando…';
     }
+    this.teardown();
+    this.status(label);
+    const tok = ++this.token;
+    setTimeout(() => { if (tok === this.token) this.attempt(next, label); }, delay);
   }
 
-  play() {
-    const p = this.video.play();
-    if (p) p.catch(() => {});
+  giveUp(text) {
+    this.teardown();
+    this.token++;
+    this.msg(text);
+    this.retryBtn.hidden = false;
   }
+
+  onPlaying() {
+    this.lastTime = this.video.currentTime;
+    this.played = true;
+    this.clearTimer();
+    this.stopTicker();
+    this.msg('');
+    // Smooth playback for a while resets the reconnect budget.
+    clearTimeout(this.healthy);
+    this.healthy = setTimeout(() => { this.reconnects = 0; }, 30000);
+  }
+
+  onWaiting() {
+    if (!this.played || !this.isOpen) return;
+    const buffer = +this.getSettings().buffer || 10;
+    this.status('Cargando…');
+    this.armTimer(Math.max(20, buffer + 15));   // frozen this long → reconnect
+  }
+
+  armTimer(sec) {
+    this.clearTimer();
+    const tok = this.token;
+    this.watchdog = setTimeout(() => { if (tok === this.token) this.failNow?.(); }, sec * 1000);
+  }
+
+  clearTimer() { clearTimeout(this.watchdog); }
+
+  // Status text with an elapsed-seconds counter, so a slow server doesn't look frozen.
+  status(text) {
+    this.stopTicker();
+    const t0 = Date.now();
+    const draw = () => {
+      const s = Math.floor((Date.now() - t0) / 1000);
+      this.msg(s >= 3 ? `${text} ${s} s${s >= 15 ? ' · el servidor tarda en responder' : ''}` : text);
+    };
+    draw();
+    this.ticker = setInterval(draw, 1000);
+  }
+
+  stopTicker() { clearInterval(this.ticker); }
 
   teardown() {
-    this.hls?.destroy();
-    this.hls = null;
-    if (this.mp) { try { this.mp.destroy(); } catch {} this.mp = null; }
-    const v = this.video;
-    v.onerror = null;
-    v.removeAttribute('src');
-    v.load();
+    this.clearTimer();
+    this.stopTicker();
+    clearTimeout(this.healthy);
+    this.engine?.destroy();
+    this.engine = null;
+    resetVideo(this.video);
   }
 
   msg(t) { this.msgEl.textContent = t; }
@@ -146,10 +214,12 @@ export class Player {
   }
 
   close(fromPopstate = false) {
+    if (!this.isOpen) return;
     this.token++;
     this.teardown();
     this.root.hidden = true;
     this.msg('');
+    this.retryBtn.hidden = true;
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     if (this.pushed && !fromPopstate) { this.pushed = false; history.back(); }
     this.onclose?.();

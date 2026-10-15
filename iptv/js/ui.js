@@ -38,10 +38,11 @@ export function loading(text) {
 }
 
 export class VList {
-  constructor(el, rowH, render, onClick) {
+  constructor(el, rowH, render, onClick, onDraw) {
     this.el = el;
     this.rowH = rowH;
     this.render = render;
+    this.onDraw = onDraw;
     this.items = [];
     this.nodes = new Map();
     el.classList.add('vlist');
@@ -74,6 +75,15 @@ export class VList {
     if (n) n.innerHTML = this.render(this.items[i], i);
   }
 
+  // Re-render the visible rows matching pred(item).
+  updateWhere(pred) {
+    for (const [i, n] of this.nodes) if (pred(this.items[i])) n.innerHTML = this.render(this.items[i], i);
+  }
+
+  visibleItems() {
+    return this.items.slice(this.s ?? 0, this.e ?? 0);
+  }
+
   schedule() {
     if (this.raf) return;
     this.raf = requestAnimationFrame(() => { this.raf = 0; this.draw(); });
@@ -103,5 +113,6 @@ export class VList {
       this.nodes.set(i, d);
     }
     this.win.appendChild(frag);
+    this.onDraw?.();
   }
 }

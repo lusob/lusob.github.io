@@ -58,25 +58,35 @@
           <button id="back" class="icon" aria-label="Atrás">‹</button>
           <h2 id="listTitle"></h2>
           <span id="listCount" class="muted"></span>
+          <span class="spacer"></span>
+          <button id="mosaicBtn" class="icon" title="Mosaico" aria-label="Mosaico" hidden>▦</button>
         </div>
         <div id="items"></div>
         <div id="series" hidden></div>
-        <p id="empty" class="empty" hidden></p>
+        <div id="mosaic" hidden></div>
+        <div id="empty" class="empty" hidden>
+          <p id="emptyText"></p>
+          <button id="emptyRetry" hidden>Reintentar</button>
+        </div>
       </main>
     </div>
   </section>
 
   <!-- Player -->
   <div id="player" hidden>
-    <video id="video" controls playsinline autoplay></video>
+    <video id="video" controls playsinline></video>
     <div class="pbar">
       <button id="pClose" class="icon" aria-label="Cerrar">✕</button>
-      <span id="pTitle"></span>
+      <div class="ptext">
+        <div id="pTitle"></div>
+        <div id="pInfo" hidden></div>
+      </div>
       <button id="pPrev" class="icon" aria-label="Anterior">‹</button>
       <button id="pNext" class="icon" aria-label="Siguiente">›</button>
       <button id="pFs" class="icon" aria-label="Pantalla completa">⛶</button>
     </div>
     <div id="pMsg"></div>
+    <button id="pRetry" class="primary" hidden>Reintentar</button>
   </div>
 
   <!-- Settings -->
@@ -84,14 +94,48 @@
     <form method="dialog" class="card">
       <h2>Ajustes</h2>
       <div id="accountInfo" class="muted"></div>
+      <label>Buffer de vídeo
+        <select id="bufferInput">
+          <option value="5">5 s (menos retraso)</option>
+          <option value="10">10 s</option>
+          <option value="20">20 s</option>
+          <option value="30">30 s</option>
+          <option value="60">60 s (más estable)</option>
+        </select>
+      </label>
+      <label>Mosaico: segundos por canal
+        <select id="scanInput">
+          <option value="4">4 s</option>
+          <option value="6">6 s</option>
+          <option value="10">10 s</option>
+          <option value="15">15 s</option>
+        </select>
+      </label>
+      <label class="check"><input id="epgInput" type="checkbox"> Mostrar guía (EPG) en la lista de canales</label>
       <label>Proxy (opcional)
         <input id="proxyInput" type="text" inputmode="url" placeholder="https://mi-proxy.workers.dev" autocapitalize="off" spellcheck="false">
       </label>
       <div class="actions">
-        <button id="saveProxy" value="save" class="primary">Guardar</button>
-        <button id="clearCache" value="cache">Borrar caché</button>
-        <button id="logout" value="logout" class="danger">Cerrar sesión</button>
+        <button value="save" class="primary">Guardar</button>
+        <button value="pin">Cambiar PIN adultos</button>
+        <button value="cache">Borrar caché</button>
+        <button value="logout" class="danger">Cerrar sesión</button>
         <button value="close">Cerrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- PIN -->
+  <dialog id="pinDialog">
+    <form method="dialog" class="card" id="pinForm">
+      <h2 id="pinTitle"></h2>
+      <p id="pinHint" class="hint"></p>
+      <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
+      <input id="pinInput2" type="password" inputmode="numeric" autocomplete="off" placeholder="Repite el PIN" hidden>
+      <p id="pinError" class="error" hidden></p>
+      <div class="actions">
+        <button value="ok" class="primary">Aceptar</button>
+        <button value="cancel" formnovalidate>Cancelar</button>
       </div>
     </form>
   </dialog>
