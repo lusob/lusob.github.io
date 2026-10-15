@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0f13">
+  <title>IPTV</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+  <!-- Login -->
+  <section id="login" class="view" hidden>
+    <form id="loginForm" class="card" autocomplete="on">
+      <h1>IPTV</h1>
+      <label>Servidor
+        <input name="server" type="text" inputmode="url" placeholder="http://servidor:puerto" required autocapitalize="off" spellcheck="false">
+      </label>
+      <label>Usuario
+        <input name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+      </label>
+      <label>Contraseña
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <details id="advanced">
+        <summary>Avanzado</summary>
+        <label>Proxy (opcional)
+          <input name="proxy" type="text" inputmode="url" placeholder="https://mi-proxy.workers.dev" autocapitalize="off" spellcheck="false">
+        </label>
+        <p class="hint">Necesario si tu servidor es <code>http://</code> o no permite CORS. Ver README.</p>
+      </details>
+      <p id="loginWarn" class="warn" hidden></p>
+      <p id="loginError" class="error" hidden></p>
+      <button type="submit" class="primary">Entrar</button>
+    </form>
+  </section>
+
+  <!-- Main -->
+  <section id="main" class="view" hidden>
+    <header class="top">
+      <nav class="tabs" role="tablist">
+        <button data-tab="live" role="tab">Directo</button>
+        <button data-tab="vod" role="tab">Películas</button>
+        <button data-tab="series" role="tab">Series</button>
+      </nav>
+      <input id="search" type="search" placeholder="Buscar" autocomplete="off" spellcheck="false">
+      <button id="refresh" class="icon" title="Actualizar listas" aria-label="Actualizar">⟳</button>
+      <button id="settingsBtn" class="icon" title="Ajustes" aria-label="Ajustes">⚙</button>
+    </header>
+    <div class="panes">
+      <aside id="folders" class="pane"></aside>
+      <main id="itemsPane" class="pane">
+        <div class="pane-head">
+          <button id="back" class="icon" aria-label="Atrás">‹</button>
+          <h2 id="listTitle"></h2>
+          <span id="listCount" class="muted"></span>
+        </div>
+        <div id="items"></div>
+        <div id="series" hidden></div>
+        <p id="empty" class="empty" hidden></p>
+      </main>
+    </div>
+  </section>
+
+  <!-- Player -->
+  <div id="player" hidden>
+    <video id="video" controls playsinline autoplay></video>
+    <div class="pbar">
+      <button id="pClose" class="icon" aria-label="Cerrar">✕</button>
+      <span id="pTitle"></span>
+      <button id="pPrev" class="icon" aria-label="Anterior">‹</button>
+      <button id="pNext" class="icon" aria-label="Siguiente">›</button>
+      <button id="pFs" class="icon" aria-label="Pantalla completa">⛶</button>
+    </div>
+    <div id="pMsg"></div>
+  </div>
+
+  <!-- Settings -->
+  <dialog id="settings">
+    <form method="dialog" class="card">
+      <h2>Ajustes</h2>
+      <div id="accountInfo" class="muted"></div>
+      <label>Proxy (opcional)
+        <input id="proxyInput" type="text" inputmode="url" placeholder="https://mi-proxy.workers.dev" autocapitalize="off" spellcheck="false">
+      </label>
+      <div class="actions">
+        <button id="saveProxy" value="save" class="primary">Guardar</button>
+        <button id="clearCache" value="cache">Borrar caché</button>
+        <button id="logout" value="logout" class="danger">Cerrar sesión</button>
+        <button value="close">Cerrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="loading" hidden><div class="spinner"></div><span id="loadingText"></span></div>
+  <div id="toast" hidden></div>
+</body>
+</html>
