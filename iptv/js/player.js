@@ -1,16 +1,19 @@
 // Fullscreen overlay player. Each item resolves to a list of attempts ([engine, url]);
 // on a fatal error the next attempt is tried (e.g. hls.js → native HLS → mpegts.js).
-// Built for slow/overloaded servers: long timeouts, retry rounds with backoff, and a stall
-// watchdog that reconnects when playback freezes.
+// Built for slow/overloaded servers: long timeouts, retry rounds with backoff, a stall
+// watchdog that reconnects when playback freezes, and an adaptive buffer that grows
+// (up to the configured maximum) when playback keeps cutting out.
 
 import { startEngine, resetVideo } from './engines.js';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
 const LOAD_TIMEOUT = 60;     // s without playback before an attempt is considered failed
+const STALL_WINDOW = 180e3;  // a second cut within this time grows the buffer
+const FILL_STUCK = 25;       // s without the buffer growing while refilling → reconnect
 
 export class Player {
-  // getSettings() → { buffer: seconds }
+  // getSettings() → { buffer, bufferMax } in seconds
   constructor(root, getSettings) {
     this.root = root;
     this.getSettings = getSettings;
@@ -21,25 +24,52 @@ export class Player {
     this.retryBtn = root.querySelector('#pRetry');
     this.prevBtn = root.querySelector('#pPrev');
     this.nextBtn = root.querySelector('#pNext');
+    this.favBtn = root.querySelector('#pFav');
+    this.audioBtn = root.querySelector('#pAudio');
+    this.subsBtn = root.querySelector('#pSubs');
+    this.menu = root.querySelector('#pMenu');
     this.token = 0;
     this.pushed = false;
+    this.eff = null;         // current adaptive buffer (s), kept across channels
+    this.lastStall = 0;
 
     root.querySelector('#pClose').onclick = () => this.close();
     this.prevBtn.onclick = () => this.step(-1);
     this.nextBtn.onclick = () => this.step(1);
     this.retryBtn.onclick = () => this.load();
     root.querySelector('#pFs').onclick = () => this.fullscreen();
+    this.favBtn.onclick = () => {
+      if (!this.fav) return;
+      this.fav.toggle(this.current);
+      this.updateFav();
+    };
+    this.audioBtn.onclick = e => { e.stopPropagation(); this.openMenu('audio'); };
+    this.subsBtn.onclick = e => { e.stopPropagation(); this.openMenu('subs'); };
+    this.menu.addEventListener('click', e => {
+      e.stopPropagation();
+      const b = e.target.closest('[data-id]');
+      if (!b || !this.engine) return;
+      const id = +b.dataset.id;
+      if (this.menu.dataset.kind === 'audio') this.engine.setAudio?.(id);
+      else this.engine.setSub?.(id);
+      this.closeMenu();
+      setTimeout(() => this.updateTracks(), 100);
+    });
+    root.addEventListener('click', () => this.closeMenu());
 
     const v = this.video;
     v.addEventListener('playing', () => this.onPlaying());
     v.addEventListener('timeupdate', () => { if (!v.paused && v.currentTime > this.lastTime + 0.2) this.onPlaying(); });
     v.addEventListener('waiting', () => this.onWaiting());
+    v.addEventListener('loadedmetadata', () => this.updateTracks());
 
     // Show the bar on interaction, hide it after a few seconds of playback.
     const wake = () => {
       root.classList.remove('idle');
       clearTimeout(this.idleTimer);
-      this.idleTimer = setTimeout(() => { if (!v.paused) root.classList.add('idle'); }, 4000);
+      this.idleTimer = setTimeout(() => {
+        if (!v.paused && this.menu.hidden) root.classList.add('idle');
+      }, 4000);
     };
     ['pointerdown', 'pointermove', 'keydown'].forEach(ev => root.addEventListener(ev, wake));
     this.wake = wake;
@@ -59,10 +89,12 @@ export class Player {
   get current() { return this.queue?.[this.index]; }
 
   // queue: items; resolve(item) → { title, live, attempts: [[engine, url], ...] }
-  open(queue, index, resolve) {
+  // fav (optional): { has(item), toggle(item) }
+  open(queue, index, resolve, fav = null) {
     this.queue = queue;
     this.index = index;
     this.resolve = resolve;
+    this.fav = fav;
     this.root.hidden = false;
     if (!this.pushed) { history.pushState({ player: 1 }, ''); this.pushed = true; }
     this.load();
@@ -87,6 +119,8 @@ export class Player {
     this.reconnects = 0;
     this.played = false;
     this.resumeAt = 0;
+    this.closeMenu();
+    this.updateFav();
     this.wake();
     this.onchange?.(this.current);
     this.attempt(0, 'Conectando…');
@@ -96,6 +130,66 @@ export class Player {
     this.info.innerHTML = html;
     this.info.hidden = !html;
   }
+
+  updateFav() {
+    this.favBtn.hidden = !this.fav;
+    if (this.fav) this.favBtn.classList.toggle('on', !!this.fav.has(this.current));
+  }
+
+  // ---------------------------------------------------------------- adaptive buffer
+
+  buffer() {
+    const s = this.getSettings();
+    const base = Math.max(2, +s.buffer || 10);
+    const max = Math.max(base, +s.bufferMax || 60);
+    if (this.eff == null || this.effBase !== base) { this.eff = base; this.effBase = base; }
+    this.eff = Math.min(Math.max(this.eff, base), max);
+    return { eff: this.eff, max };
+  }
+
+  // After a cut: grow the buffer if cuts are frequent, then hold playback until that much is downloaded.
+  refill() {
+    const { eff, max } = this.buffer();
+    const now = Date.now();
+    let grown = false;
+    if (now - this.lastStall < STALL_WINDOW && eff < max) {
+      this.eff = Math.min(max, Math.round(eff + Math.max(5, eff * 0.5)));
+      this.engine?.setBuffer?.(this.eff);
+      grown = true;
+    }
+    this.lastStall = now;
+    const target = this.eff;
+    const v = this.video;
+    const tok = this.token;
+    clearInterval(this.filling);
+    v.pause();
+    this.stopTicker();
+    this.armTimer(FILL_STUCK);
+    let best = -1;
+    const t0 = Date.now();
+    this.filling = setInterval(() => {
+      if (tok !== this.token) return clearInterval(this.filling);
+      const ahead = this.ahead();
+      if (ahead > best + 0.5) { best = ahead; this.armTimer(FILL_STUCK); }
+      this.msg(`${grown ? `Cortes frecuentes: buffer ampliado a ${target} s. ` : ''}Llenando buffer… ${Math.floor(Math.max(0, ahead))}/${target} s`);
+      // VOD: the browser may stop downloading before reaching the target; don't wait forever.
+      if (ahead >= target || (!this.live && Date.now() - t0 > target * 1500 && ahead > 2)) {
+        clearInterval(this.filling);
+        this.filling = 0;
+        this.play();
+      }
+    }, 500);
+  }
+
+  ahead() {
+    const v = this.video, b = v.buffered;
+    for (let i = 0; i < b.length; i++) {
+      if (b.start(i) <= v.currentTime + 0.5 && v.currentTime < b.end(i)) return b.end(i) - v.currentTime;
+    }
+    return 0;
+  }
+
+  // ---------------------------------------------------------------- engines
 
   attempt(i, status) {
     this.teardown();
@@ -108,13 +202,15 @@ export class Player {
     const fail = () => { if (tok === this.token) this.failed(); };
     this.failNow = fail;
     const [engine, url] = this.attempts[i];
-    const buffer = Math.max(2, +this.getSettings().buffer || 10);
+    const { eff } = this.buffer();
     this.engine = startEngine(this.video, engine, url, {
-      buffer,
+      buffer: eff,
       resumeAt: this.resumeAt,
-      prebuffer: this.live && engine === 'mpegts' ? Math.min(buffer, 10) : 0,
+      prebuffer: this.live && engine === 'mpegts' ? Math.min(eff, 10) : 0,
       onStatus: t => { if (tok === this.token) { this.stopTicker(); this.msg(t); } },
+      onTracks: () => { if (tok === this.token) this.updateTracks(); },
     }, fail);
+    this.updateTracks();
   }
 
   failed() {
@@ -155,6 +251,7 @@ export class Player {
   }
 
   onPlaying() {
+    if (this.filling) return;
     this.lastTime = this.video.currentTime;
     this.played = true;
     this.clearTimer();
@@ -166,10 +263,8 @@ export class Player {
   }
 
   onWaiting() {
-    if (!this.played || !this.isOpen) return;
-    const buffer = +this.getSettings().buffer || 10;
-    this.status('Cargando…');
-    this.armTimer(Math.max(20, buffer + 15));   // frozen this long → reconnect
+    if (!this.played || !this.isOpen || this.filling) return;
+    this.refill();
   }
 
   armTimer(sec) {
@@ -194,13 +289,47 @@ export class Player {
 
   stopTicker() { clearInterval(this.ticker); }
 
+  // ---------------------------------------------------------------- audio / subtitles
+
+  updateTracks() {
+    const audio = this.engine?.audio?.() || [];
+    const subs = this.engine?.subs?.() || [];
+    this.audioBtn.hidden = audio.length < 2;
+    this.subsBtn.hidden = !subs.length;
+    this.subsBtn.classList.toggle('on', subs.some(t => t.active));
+    if (!this.menu.hidden) this.openMenu(this.menu.dataset.kind);
+  }
+
+  openMenu(kind) {
+    const tracks = (kind === 'audio' ? this.engine?.audio?.() : this.engine?.subs?.()) || [];
+    const rows = tracks.map(t => `<button data-id="${t.id}" class="${t.active ? 'on' : ''}">${t.active ? '✓ ' : ''}${escHtml(t.label)}</button>`);
+    if (kind === 'subs') rows.unshift(`<button data-id="-1" class="${tracks.some(t => t.active) ? '' : 'on'}">${tracks.some(t => t.active) ? '' : '✓ '}Desactivados</button>`);
+    this.menu.innerHTML = `<div class="pm-title">${kind === 'audio' ? 'Audio' : 'Subtítulos'}</div>${rows.join('')}`;
+    this.menu.dataset.kind = kind;
+    this.menu.hidden = false;
+    this.root.classList.remove('idle');
+  }
+
+  closeMenu() { this.menu.hidden = true; }
+
+  // ---------------------------------------------------------------- lifecycle
+
+  play() {
+    const p = this.video.play();
+    if (p) p.catch(() => {});
+  }
+
   teardown() {
     this.clearTimer();
     this.stopTicker();
+    clearInterval(this.filling);
+    this.filling = 0;
     clearTimeout(this.healthy);
     this.engine?.destroy();
     this.engine = null;
     resetVideo(this.video);
+    this.audioBtn.hidden = true;
+    this.subsBtn.hidden = true;
   }
 
   msg(t) { this.msgEl.textContent = t; }
@@ -217,6 +346,7 @@ export class Player {
     if (!this.isOpen) return;
     this.token++;
     this.teardown();
+    this.closeMenu();
     this.root.hidden = true;
     this.msg('');
     this.retryBtn.hidden = true;
@@ -225,3 +355,5 @@ export class Player {
     this.onclose?.();
   }
 }
+
+const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

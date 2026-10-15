@@ -24,7 +24,7 @@ let mosaicOn = false;
 let playerKind = '';           // 'live' | 'vod' | 'series'
 const seriesCache = new Map();
 const ui = Object.assign({ tab: 'live', folder: {} }, store.get('ui', {}));
-const settings = Object.assign({ buffer: 10, scan: 6, epg: true }, store.get('settings', {}));
+const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 6, epg: true }, store.get('settings', {}));
 
 const player = new Player($('#player'), () => settings);
 const folderList = new VList($('#folders'), 64, renderFolderRow, onFolderClick);
@@ -33,9 +33,10 @@ let epg = null;
 const mosaic = new Mosaic($('#mosaic'), {
   getSettings: () => settings,
   attempts: it => resolveLive(it).attempts,
-  onOpen: (items, i) => { mosaic.stop(); playerKind = 'live'; player.open(items, i, resolveLive); },
+  onOpen: (items, i) => { mosaic.stop(); playerKind = 'live'; player.open(items, i, resolveLive, favCtl('live')); },
   info: it => esc(epgNow(it)?.title || ''),
   onVisible: items => { if (settings.epg && epg) epg.want(items.map(i => i.id)); },
+  pager: { root: $('#mosaicPager'), prev: $('#mPrev'), next: $('#mNext'), label: $('#mPage') },
 });
 
 const saveUi = () => store.set('ui', ui);
@@ -116,7 +117,7 @@ function startSession(creds, info = null) {
 }
 
 function logout() {
-  mosaic.stop();
+  mosaic.hide();
   store.del('creds');
   api = null;
   data = {};
@@ -242,7 +243,9 @@ function ensureData(type, force = false) {
 async function loadData(type, force) {
   const key = account + '|' + type;
   const cached = await store.cacheGet(key);
-  if (cached && !force && Date.now() - cached.ts < MAX_AGE) return (data[type] = build(cached));
+  // Empty cached lists are ignored (an earlier version could cache a failed load as empty).
+  const usable = cached?.items?.length ? cached : null;
+  if (usable && !force && Date.now() - usable.ts < MAX_AGE) return (data[type] = build(usable));
   if (force) delete data[type];
   const label = `Cargando ${TYPES[type].toLowerCase()}…`;
   const progress = { text: label };
@@ -250,15 +253,17 @@ async function loadData(type, force) {
   try {
     const fresh = await api.fetchType(type, (done, total) => { progress.text = `${label} carpeta ${done}/${total}`; });
     fresh.ts = Date.now();
-    store.cachePut(key, fresh);
+    if (fresh.items.length) store.cachePut(key, fresh);
     data[type] = build(fresh);
+    data[type].diag = api.diag;
   } catch (ex) {
-    if (cached) {
-      data[type] = build(cached);
+    if (usable) {
+      data[type] = build(usable);
       toast('No se pudo actualizar: mostrando la lista guardada');
     } else {
       data[type] = build({ cats: [], items: [] });
       data[type].error = ex.message;
+      data[type].diag = [ex.detail, api.diag].filter(Boolean).join(' · ');
     }
   } finally {
     stop();
@@ -325,7 +330,7 @@ async function selectTab(type) {
   saveUi();
   for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('active', b.dataset.tab === type);
   closeSeries();
-  mosaic.stop();
+  mosaic.hide();
   mosaic.source = null;
   $('#mosaicBtn').hidden = type !== 'live';
   if (!data[type]) {
@@ -438,7 +443,7 @@ function refreshItems(resetScroll) {
   if (useMosaic) {
     if (mosaic.source !== list) { mosaic.source = list; mosaic.show(list); }
   } else {
-    mosaic.stop();
+    mosaic.hide();
     mosaic.source = null;
     itemList.set(list, resetScroll);
   }
@@ -449,6 +454,8 @@ function refreshItems(resetScroll) {
     : query ? 'Sin resultados'
     : id === FAV ? 'Aún no hay favoritos. Pulsa ★ en cualquier elemento.'
     : 'No hay elementos';
+  $('#emptyDiag').textContent = d.error || (!d.items.length && !query) ? `Detalle: ${d.diag || 'el servidor devolvió una lista vacía'}` : '';
+  if (!d.error && !d.items.length) $('#emptyRetry').hidden = false;
 }
 
 function folderName(it) {
@@ -492,7 +499,23 @@ function onItemClick(it, i, act) {
   }
   if (ui.tab === 'series') return openSeries(it);
   playerKind = ui.tab;
-  player.open(list, i, ui.tab === 'live' ? resolveLive : resolveVod);
+  player.open(list, i, ui.tab === 'live' ? resolveLive : resolveVod, favCtl(ui.tab));
+}
+
+// Favorite toggle from inside the player. For episodes, the favorite is the series.
+function favCtl(type, fixed = null) {
+  const target = it => fixed || it;
+  return {
+    has: it => favs[type].items.has(target(it).id),
+    toggle: it => {
+      const id = target(it).id;
+      toggle(favs[type].items, id);
+      if (ui.tab !== type || !data[type]) return;
+      if ((ui.folder[type] || ALL) === FAV && !query) refreshItems(false);
+      else itemList.updateWhere(x => x.id === id);
+      renderFolders();
+    },
+  };
 }
 
 function resolveLive(it) {
@@ -616,6 +639,7 @@ $('#series').addEventListener('click', e => {
   const name = series.item.name;
   const season = series.season;
   playerKind = 'series';
+  const fav = favCtl('series', series.item);
   player.open(eps, +ep.dataset.ep, x => {
     const ext = x.container_extension || 'mp4';
     const url = api.path('series', x.id, ext);
@@ -623,7 +647,7 @@ $('#series').addEventListener('click', e => {
       title: `${name} · T${season}E${x.episode_num ?? ''} ${x.title && !x.title.includes(name) ? x.title : ''}`.trim(),
       attempts: ext === 'm3u8' ? [['hls', url], ['native-hls', url]] : [['native', url]],
     };
-  });
+  }, fav);
 });
 
 function closeSeries() {
@@ -667,7 +691,7 @@ async function reload() {
   seriesCache.clear();
   epg?.clear();
   closeSeries();
-  mosaic.stop();
+  mosaic.hide();
   mosaic.source = null;
   await ensureData(t, true);
   if (ui.tab !== t) return;
@@ -692,6 +716,7 @@ $('#settingsBtn').addEventListener('click', () => {
   $('#accountInfo').innerHTML = lines.join('<br>');
   $('#proxyInput').value = api.proxy;
   $('#bufferInput').value = String(settings.buffer);
+  $('#bufferMaxInput').value = String(settings.bufferMax);
   $('#scanInput').value = String(settings.scan);
   $('#epgInput').checked = !!settings.epg;
   $('#settings').returnValue = '';
@@ -702,6 +727,7 @@ $('#settings').addEventListener('close', async () => {
   const v = $('#settings').returnValue;
   if (v === 'save') {
     settings.buffer = +$('#bufferInput').value;
+    settings.bufferMax = Math.max(settings.buffer, +$('#bufferMaxInput').value);
     settings.scan = +$('#scanInput').value;
     settings.epg = $('#epgInput').checked;
     store.set('settings', settings);

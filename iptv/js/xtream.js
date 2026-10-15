@@ -92,33 +92,46 @@ export class Xtream {
     return d;
   }
 
-  // Lists the whole section in one request; if that fails (huge list on a struggling server),
-  // falls back to one lighter request per category.
+  // Lists the whole section in one request; if that fails or comes back empty (huge list on a
+  // struggling server), falls back to one lighter request per category.
   async fetchType(type, onProgress) {
     const [catAction, itemAction] = ACTIONS[type];
-    const rawCats = await this.api(catAction);
-    const cats = (Array.isArray(rawCats) ? rawCats : []).map(c => ({ id: String(c.category_id), name: String(c.category_name ?? '') }));
-    let raw;
+    let rawCats;
     try {
-      raw = await this.api(itemAction, {}, { timeout: 120000, retries: 1 });
-      if (!Array.isArray(raw)) throw new Error('Respuesta no válida del servidor');
+      rawCats = toArray(await this.api(catAction));
     } catch (e) {
-      if (!cats.length) throw e;
+      throw withStep(e, `${catAction}`);
+    }
+    const cats = (rawCats || []).map(c => ({ id: String(c.category_id), name: String(c.category_name ?? '') }));
+    let raw, fullError = null;
+    try {
+      raw = toArray(await this.api(itemAction, {}, { timeout: 120000, retries: 1 }));
+      if (!raw) fullError = new Error('Respuesta con formato inesperado');
+      else if (!raw.length && cats.length) fullError = new Error('Lista completa vacía');
+    } catch (e) {
+      fullError = e;
+    }
+    this.diag = fullError ? `${itemAction}: ${fullError.message}` : '';
+    if (fullError) {
+      if (!cats.length) throw withStep(fullError, itemAction);
       raw = [];
-      let done = 0, ok = 0;
+      let done = 0, ok = 0, lastErr = null;
       onProgress?.(0, cats.length);
       await pool(cats, 3, async c => {
         try {
-          const r = await this.api(itemAction, { category_id: c.id }, { timeout: 60000, retries: 2 });
-          if (Array.isArray(r)) { raw.push(...r); ok++; }
-        } catch {}
+          const r = toArray(await this.api(itemAction, { category_id: c.id }, { timeout: 60000, retries: 2 }));
+          if (r) { for (const x of r) raw.push(x); ok++; }
+        } catch (e) { lastErr = e; }
         onProgress?.(++done, cats.length);
       });
-      if (!ok) throw e;
+      this.diag += ` · por carpetas: ${ok}/${cats.length} ok${lastErr ? ` (${lastErr.message})` : ''}`;
+      if (!ok) throw withStep(lastErr || fullError, `${itemAction} (completa y por carpetas)`);
     }
     const seen = new Map();
     for (const s of raw) {
+      if (!s || typeof s !== 'object') continue;
       const it = normalize(type, s);
+      if (!it.id || it.id === 'undefined') continue;
       const prev = seen.get(it.id);
       if (prev) { for (const c of it.cats) if (!prev.cats.includes(c)) prev.cats.push(c); }
       else seen.set(it.id, it);
@@ -151,6 +164,22 @@ export class Xtream {
     const f = allowed.length ? order.filter(x => allowed.includes(x)) : order;
     return f.length ? f : order;
   }
+}
+
+// Some panels answer with {"0": {...}, "1": {...}} instead of an array.
+function toArray(x) {
+  if (Array.isArray(x)) return x;
+  if (x && typeof x === 'object' && !('user_info' in x) && !('error' in x)) {
+    const v = Object.values(x);
+    if (v.every(e => e && typeof e === 'object')) return v;
+  }
+  return null;
+}
+
+function withStep(e, step) {
+  const err = new Error(e.message);
+  err.detail = step;
+  return err;
 }
 
 async function pool(list, n, fn) {

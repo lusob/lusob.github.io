@@ -3,7 +3,7 @@
 // on a fatal error and returns a handle with destroy().
 
 export function startEngine(v, engine, url, opt, fail) {
-  const { buffer = 10, light = false, resumeAt = 0, prebuffer = 0, onStatus } = opt;
+  const { buffer = 10, light = false, resumeAt = 0, prebuffer = 0, onStatus, onTracks } = opt;
   const failLater = () => { Promise.resolve().then(fail); return { destroy() {} }; };
   const play = () => { const p = v.play(); if (p) p.catch(() => {}); };
 
@@ -25,7 +25,8 @@ export function startEngine(v, engine, url, opt, fail) {
       startFragPrefetch: true,
       // Live: play `buffer` seconds behind the edge, so that much is always downloaded ahead.
       liveSyncDuration: buffer,
-      liveMaxLatencyDuration: buffer * 3 + 10,
+      // Generous: the adaptive buffer may leave us well behind the edge; don't jump back to live.
+      liveMaxLatencyDuration: Math.max(buffer * 3 + 10, 600),
       maxBufferLength: Math.max(30, buffer * 2),
       maxMaxBufferLength: Math.max(120, buffer * 4),
       backBufferLength: 30,
@@ -45,9 +46,28 @@ export function startEngine(v, engine, url, opt, fail) {
       if (resumeAt) v.currentTime = resumeAt;
       play();
     });
+    if (!light && onTracks) {
+      for (const ev of ['AUDIO_TRACKS_UPDATED', 'AUDIO_TRACK_SWITCHED', 'SUBTITLE_TRACKS_UPDATED', 'SUBTITLE_TRACK_SWITCH']) {
+        hls.on(Hls.Events[ev], () => onTracks());
+      }
+    }
     hls.loadSource(url);
     hls.attachMedia(v);
-    return { destroy: () => hls.destroy() };
+    return {
+      destroy: () => hls.destroy(),
+      setBuffer: sec => {
+        hls.config.liveSyncDuration = sec;
+        hls.config.maxBufferLength = Math.max(30, sec * 2);
+        hls.config.maxMaxBufferLength = Math.max(120, sec * 4);
+      },
+      audio: () => hls.audioTracks.map((t, i) => ({ id: i, label: trackLabel(t.name, t.lang, i), active: i === hls.audioTrack })),
+      setAudio: id => { hls.audioTrack = id; },
+      subs: () => hls.subtitleTracks.map((t, i) => ({ id: i, label: trackLabel(t.name, t.lang, i), active: hls.subtitleDisplay && i === hls.subtitleTrack })),
+      setSub: id => {
+        hls.subtitleDisplay = id >= 0;
+        hls.subtitleTrack = id;
+      },
+    };
   }
 
   if (engine === 'mpegts') {
@@ -83,15 +103,42 @@ export function startEngine(v, engine, url, opt, fail) {
 
   // 'native' (files) or 'native-hls'
   if (engine === 'native-hls' && !v.canPlayType('application/vnd.apple.mpegurl')) return failLater();
+  const stale = new Set(v.textTracks);   // tracks left behind by earlier hls.js sessions
   v.onerror = fail;
   v.src = url;
   if (resumeAt) v.addEventListener('loadedmetadata', () => { v.currentTime = resumeAt; }, { once: true });
+  if (onTracks) {
+    if (v.audioTracks) v.audioTracks.onaddtrack = onTracks;
+    v.textTracks.onaddtrack = onTracks;
+  }
   play();
-  return { destroy() {} };
+  // Files: audio switching needs AudioTrackList (not exposed by every Chromium build).
+  const texts = () => [...v.textTracks].filter(t => !stale.has(t) && (t.kind === 'subtitles' || t.kind === 'captions'));
+  return {
+    destroy() {},
+    audio: () => v.audioTracks ? [...v.audioTracks].map((t, i) => ({ id: i, label: trackLabel(t.label, t.language, i), active: t.enabled })) : [],
+    setAudio: id => { [...v.audioTracks].forEach((t, i) => { t.enabled = i === id; }); },
+    subs: () => texts().map((t, i) => ({ id: i, label: trackLabel(t.label, t.language, i), active: t.mode === 'showing' })),
+    setSub: id => { texts().forEach((t, i) => { t.mode = i === id ? 'showing' : 'disabled'; }); },
+  };
+}
+
+let langNames;
+try { langNames = new Intl.DisplayNames(['es'], { type: 'language' }); } catch {}
+
+function trackLabel(name, lang, i) {
+  let l = '';
+  if (lang && langNames) { try { l = langNames.of(lang.replace('_', '-')); } catch {} }
+  l = l ? l[0].toUpperCase() + l.slice(1) : '';
+  if (name && l && !name.toLowerCase().includes(l.toLowerCase())) return `${name} (${l})`;
+  return name || l || lang || `Pista ${i + 1}`;
 }
 
 export function resetVideo(v) {
   v.onerror = null;
+  if (v.audioTracks) v.audioTracks.onaddtrack = null;
+  v.textTracks.onaddtrack = null;
+  for (const t of v.textTracks) t.mode = 'disabled';
   v.removeAttribute('src');
   v.load();
 }
