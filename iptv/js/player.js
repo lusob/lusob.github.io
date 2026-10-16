@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016e';
+import { startEngine, resetVideo } from './engines.js?v=20261016f';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
@@ -93,17 +93,11 @@ export class Player {
         if (!v.paused && this.menu.hidden) root.classList.add('idle');
       }, 4000);
     };
-    ['pointerdown', 'pointermove', 'keydown'].forEach(ev => root.addEventListener(ev, wake));
+    ['pointerdown', 'pointermove'].forEach(ev => root.addEventListener(ev, wake));
     this.wake = wake;
 
     window.addEventListener('popstate', () => {
       if (this.pushed) { this.pushed = false; this.close(true); }
-    });
-    document.addEventListener('keydown', e => {
-      if (this.root.hidden) return;
-      if (e.key === 'Escape' && !document.fullscreenElement) this.close();
-      else if (e.key === 'ArrowUp' || e.key === 'PageUp') this.step(-1);
-      else if (e.key === 'ArrowDown' || e.key === 'PageDown') this.step(1);
     });
   }
 
@@ -138,6 +132,7 @@ export class Player {
     this.prevBtn.disabled = this.index <= 0;
     this.nextBtn.disabled = this.index >= this.queue.length - 1;
     this.live = !!r.live;
+    this.fromStart = !!r.fromStart;   // e.g. a recording still in progress: start at its beginning
     this.sources = r.sources || [{ name: r.title, attempts: () => r.attempts }];
     this.liveSources = r.liveSources || null;
     this.cu = r.catchup ? { start: r.catchup.start, end: r.catchup.end, base: r.catchup.pos ?? r.catchup.start } : null;
@@ -326,6 +321,7 @@ export class Player {
     this.engine = startEngine(this.video, engine, url, {
       buffer: eff,
       resumeAt: this.resumeAt,
+      fromStart: this.fromStart,
       prebuffer: this.live && engine === 'mpegts' ? Math.min(eff, 10) : 0,
       onStatus: t => { if (tok === this.token) { this.stopTicker(); this.msg(t); } },
       onTracks: () => { if (tok === this.token) this.updateTracks(); },

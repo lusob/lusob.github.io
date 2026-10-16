@@ -70,9 +70,29 @@ export class VList {
 
   refresh() { this.draw(true); }
 
+  // Remote-control cursor: highlighted row, kept in view.
+  setCursor(i, show = true) {
+    this.cursor = Math.max(0, Math.min(i, this.items.length - 1));
+    this.showCursor = show && this.items.length > 0;
+    if (show && this.items.length) {
+      const top = this.cursor * this.rowH, el = this.el;
+      if (top < el.scrollTop) el.scrollTop = top;
+      else if (top + this.rowH > el.scrollTop + el.clientHeight) el.scrollTop = top + this.rowH - el.clientHeight;
+      this.draw();
+    }
+    this.paintCursor();
+  }
+
+  paintCursor() {
+    for (const [i, n] of this.nodes) n.classList.toggle('kfocus', !!this.showCursor && i === this.cursor);
+  }
+
+  node(i) { return this.nodes.get(i); }
+
   updateRow(i) {
     const n = this.nodes.get(i);
     if (n) n.innerHTML = this.render(this.items[i], i);
+    this.onUpdate?.(i);
   }
 
   // Re-render the visible rows matching pred(item).
@@ -113,6 +133,7 @@ export class VList {
       this.nodes.set(i, d);
     }
     this.win.appendChild(frag);
+    this.paintCursor();
     this.onDraw?.();
   }
 }

@@ -3,7 +3,7 @@
 // on a fatal error and returns a handle with destroy().
 
 export function startEngine(v, engine, url, opt, fail) {
-  const { buffer = 10, light = false, resumeAt = 0, prebuffer = 0, onStatus, onTracks } = opt;
+  const { buffer = 10, light = false, resumeAt = 0, prebuffer = 0, fromStart = false, onStatus, onTracks } = opt;
   const failLater = () => { Promise.resolve().then(fail); return { destroy() {} }; };
   const play = () => { const p = v.play(); if (p) p.catch(() => {}); };
 
@@ -23,6 +23,7 @@ export function startEngine(v, engine, url, opt, fail) {
     } : {
       enableWorker: true,
       startFragPrefetch: true,
+      startPosition: fromStart ? 0 : -1,
       // Live: play `buffer` seconds behind the edge, so that much is always downloaded ahead.
       liveSyncDuration: buffer,
       // Generous: the adaptive buffer may leave us well behind the edge; don't jump back to live.

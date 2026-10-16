@@ -4,8 +4,8 @@
 // they shrink to a comfortable minimum and the grid scrolls; tiles on screen are scanned first.
 // Channels without signal can be hidden.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016e';
-import { esc, initials } from './ui.js?v=20261016e';
+import { startEngine, resetVideo } from './engines.js?v=20261016f';
+import { esc, initials } from './ui.js?v=20261016f';
 
 const LOAD_TIMEOUT = 20;     // s to get a picture before marking the channel as "no signal"
 const GAP = 600;             // ms between streams so the server frees the connection
@@ -177,7 +177,7 @@ export class Mosaic {
     const prev = this.cur;
     this.release();
     this.cur = null;
-    const i = this.pick();
+    const i = this.opt.canScan && !this.opt.canScan() ? null : this.pick();
     const tok = ++this.token;
     if (i == null) {
       // Nothing to do right now (e.g. every channel on screen is dead and hidden): look again later.

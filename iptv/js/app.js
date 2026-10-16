@@ -1,11 +1,12 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016e';
-import * as store from './store.js?v=20261016e';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016e';
-import { Player } from './player.js?v=20261016e';
-import { Epg, hhmm } from './epg.js?v=20261016e';
-import { Mosaic } from './mosaic.js?v=20261016e';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016f';
+import * as store from './store.js?v=20261016f';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016f';
+import { Player } from './player.js?v=20261016f';
+import { Epg, hhmm } from './epg.js?v=20261016f';
+import { Mosaic } from './mosaic.js?v=20261016f';
+import { initRemote } from './remote.js?v=20261016f';
 
-const VERSION = '2026-10-16e';
+const VERSION = '2026-10-16f';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -37,13 +38,25 @@ let epg = null;
 const mosaic = new Mosaic($('#mosaic'), {
   getSettings: () => settings,
   attempts: it => liveAttempts(it),
-  onOpen: (items, i) => { mosaic.stop(); playerKind = 'live'; player.open(items, i, resolveLive, favCtl('live')); },
+  canScan: () => !recorder?.recording?.length,
+  onOpen: (items, i) => { mosaic.stop(); recorderBusy(); playerKind = 'live'; player.open(items, i, resolveLive, favCtl('live')); },
   info: it => esc(epgNow(it)?.title || ''),
   onVisible: items => { if (settings.epg && epg) epg.want(items.map(i => i.id)); },
   onStats: ({ dead }) => { $('#deadCount').textContent = dead ? ` (${dead})` : ''; },
 });
 
 const saveUi = () => store.set('ui', ui);
+
+const remote = initRemote({
+  folderList, itemList, player,
+  mosaicEl: $('#mosaic'),
+  seriesEl: $('#series'),
+  openFolder: i => onFolderClick(folderList.items[i], i, null),
+  openItem: (i, act) => onItemClick(itemList.items[i], i, act),
+  closeSeries: () => closeSeries(),
+  narrow: () => matchMedia('(max-width: 760px)').matches,
+  showFolders: () => document.body.classList.remove('show-items'),
+});
 
 // ---------------------------------------------------------------- session
 
@@ -543,7 +556,7 @@ function renderFolders(keepScroll = true) {
   const rows = [
     { id: FAV, name: '★ Favoritos', count: favItems.length, date: favItems[0]?.added, virtual: true },
     { id: ALL, name: 'Todo', count: all.length, date: all[0]?.added, virtual: true },
-    ...(ui.tab === 'live' && (d.anyArchive || recs.length) ? [{ id: REC, name: '⏺ Grabaciones', count: recs.length, virtual: true }] : []),
+    ...(ui.tab === 'live' && (recorder || d.anyArchive || recs.length) ? [{ id: REC, name: '⏺ Grabaciones', count: recList().length, virtual: true }] : []),
     ...folders.filter(f => fc.has(f.id)),
     ...folders.filter(f => !fc.has(f.id)),
   ];
@@ -636,6 +649,7 @@ function refreshItems(resetScroll) {
     mosaic.source = null;
     itemList.set(list, resetScroll);
   }
+  if (resetScroll) remote.reset();
 
   // Empty pane: why, plus a retry when it makes sense.
   const p = d.partial;
@@ -717,6 +731,7 @@ function onItemClick(it, i, act) {
   }
   if (ui.tab === 'series') return openSeries(it);
   playerKind = ui.tab;
+  recorderBusy();
   player.open(list, i, ui.tab === 'live' ? resolveLive : resolveVod, favCtl(ui.tab));
 }
 
@@ -833,7 +848,25 @@ function updatePlayerButtons(it) {
   $('#pGuide').hidden = !live;
   $('#pBackup').hidden = !live;
   $('#pStart').hidden = !(live && !player.cu && now && hasArchive([it, ...backupsOf(it.id)]));
+  $('#pRec').hidden = !(live && recorder && !player.cu);
 }
+
+// Record what is on screen on the Raspberry Pi and keep watching it from the recording
+// (the account allows a single connection: live + recorder at once would cut each other).
+$('#pRec').addEventListener('click', async () => {
+  const ch = player.current, now = Date.now() / 1000;
+  const prog = epg?.get(ch.id)?.now;
+  const r = await saveRec({
+    ch: ch.id, title: prog?.title ? `${ch.name} · ${prog.title}` : ch.name,
+    start: now, end: prog ? prog.end + PAD_END : now + 2 * 3600, backups: backups[ch.id] || [],
+  }, false);
+  if (!r) return;
+  player.close();
+  toast('Grabando en la Raspberry Pi. Lo ves desde la grabación para no gastar otra conexión.', 6000);
+  setTimeout(() => playPiRec(r), 12000);
+  loading('Empezando la grabación…');
+  setTimeout(() => loading(''), 12000);
+});
 
 $('#pStart').addEventListener('click', () => {
   const it = player.current, now = epg?.get(it.id)?.now;
@@ -862,7 +895,7 @@ async function openGuide(ch) {
   const dlg = $('#guide');
   $('#gTitle').textContent = ch.name;
   const chans = [ch, ...backupsOf(ch.id)];
-  $('#gManual').hidden = !data.live?.anyArchive;
+  $('#gManual').hidden = !(recorder || data.live?.anyArchive);
   $('#gNote').textContent = hasArchive(chans)
     ? `Archivo del proveedor: ${archiveDays(chans)} días${ch.archive ? '' : ' (en los canales de respaldo)'}. Toca un programa pasado para verlo entero.`
     : data.live?.anyArchive ? 'Este canal no tiene archivo en tu proveedor: solo se puede ver en directo. Añade canales de respaldo con archivo para poder verlo después.'
@@ -906,7 +939,7 @@ function renderGuide(ch, list) {
     if (day !== lastDay) { html += `<div class="g-day">${esc(day[0].toUpperCase() + day.slice(1))}</div>`; lastDay = day; }
     const state = p.end <= now ? 'past' : p.start <= now ? 'now' : 'future';
     const avail = progAvailable(ch, p);
-    const saved = recs.some(r => r.ch === ch.id && r.start === p.start);
+    const saved = recList().some(r => r.ch === ch.id && r.prog === p.start);
     let btns = '', meta = '';
     if (state === 'past') {
       meta = avail ? 'En el archivo' : 'Sin archivo';
@@ -917,7 +950,9 @@ function renderGuide(ch, list) {
     } else {
       meta = `Dentro de ${fmtDur(p.start - now)}`;
     }
-    if (state !== 'past' && hasArchive([ch, ...backupsOf(ch.id)])) btns += `<button data-act="rec" class="${saved ? 'on' : ''}">${saved ? '✓ Guardado' : '⏺ Guardar'}</button>`;
+    if (state !== 'past' && (recorder || hasArchive([ch, ...backupsOf(ch.id)]))) {
+      btns += `<button data-act="rec" class="${saved ? 'on' : ''}">${saved ? (recorder ? '✓ Programada' : '✓ Guardado') : (recorder ? '⏺ Grabar' : '⏺ Guardar')}</button>`;
+    }
     html += `<div class="g-row ${state}${state === 'past' && !avail ? ' gone' : ''}" data-i="${i}">
       <div class="g-time">${hhmm(p.start)}–${hhmm(p.end)}</div>
       <div class="grow"><div class="name">${esc(p.title || 'Sin título')}</div><div class="meta">${esc(meta)}</div></div>
@@ -934,9 +969,13 @@ function renderGuide(ch, list) {
       $('#guide').close();
       playCatchup(ch, p);
     } else if (act === 'rec') {
-      const r = recs.find(r => r.ch === ch.id && r.start === p.start);
+      const r = recList().find(r => r.ch === ch.id && r.prog === p.start);
       if (r) editRec(r);
-      else saveRec({ ch: ch.id, title: p.title, start: p.start, end: p.end, backups: backups[ch.id] || [] }, true);
+      else if (recorder) {
+        // The Pi records with margins: matches start late and run over.
+        saveRec({ ch: ch.id, title: p.title, prog: p.start, start: Math.max(now, p.start - PAD_START), end: p.end + PAD_END, backups: backups[ch.id] || [] }, true)
+          .then(() => renderGuide(ch, list));
+      } else saveRec({ ch: ch.id, title: p.title, prog: p.start, start: p.start, end: p.end, backups: backups[ch.id] || [] }, true);
       renderGuide(ch, list);
     }
   };
@@ -954,13 +993,14 @@ function fmtDur(s) {
 $('#gClose').addEventListener('click', () => $('#guide').close());
 $('#gManual').addEventListener('click', () => {
   const start = Math.ceil(Date.now() / 1000 / 900) * 900;
-  editRec({ ch: guideCh.id, title: '', start, end: start + 2 * 3600, backups: backups[guideCh.id] || [] }, true);
+  editRec({ ch: guideCh.id, title: guideCh.name, start, end: start + 2 * 3600, backups: backups[guideCh.id] || [] }, true);
 });
 $('#gBackups').addEventListener('click', () => editBackups(guideCh));
 
 // ---- recordings
 
-function saveRec(r, announce = false) {
+async function saveRec(r, announce = false) {
+  if (recorder) return savePiRec(r, announce);
   r.id ||= Math.random().toString(36).slice(2);
   recs = recs.filter(x => x.id !== r.id).concat(r);
   saveRecs();
@@ -970,17 +1010,25 @@ function saveRec(r, announce = false) {
       ? `Guardado en ⏺ Grabaciones: podrás verlo entero durante ${archiveDays(chans)} días`
       : 'Guardado, pero ninguno de estos canales tiene archivo: solo podrás verlo en directo. Añade respaldos con ⏪.', 5000);
   }
+  recsChanged();
+  return r;
+}
+
+function recsChanged() {
   if (ui.tab === 'live' && data.live) { renderFolders(); if (ui.folder.live === REC && !query) refreshItems(false); }
 }
 
+const recList = () => recorder ? piRecs : recs;
+
 function sortedRecs() {
   const now = Date.now() / 1000;
-  const rank = r => r.end <= now ? 2 : r.start <= now ? 0 : 1;
-  return recs.map(r => ({ ...r, rec: true, name: r.title }))
+  const rank = r => r.state === 'recording' ? 0 : r.end <= now || ['done', 'failed', 'missed'].includes(r.state) ? 2 : r.start <= now ? 0 : 1;
+  return recList().map(r => ({ ...r, rec: true, name: r.title }))
     .sort((a, b) => rank(a) - rank(b) || (rank(a) === 2 ? b.start - a.start : a.start - b.start));
 }
 
 function recStatus(r) {
+  if (r.pi) return piStatus(r);
   const now = Date.now() / 1000;
   const chans = [r.ch, ...r.backups].map(liveById).filter(Boolean);
   const days = archiveDays(chans);
@@ -992,24 +1040,117 @@ function recStatus(r) {
 }
 
 function renderRecRow(r) {
-  const ch = liveById(r.ch);
+  const chName = liveById(r.ch)?.name || r.chName || 'canal no disponible';
   const bk = r.backups.length ? ` · ${r.backups.length} de respaldo` : '';
-  return `<div class="row rec">
+  return `<div class="row rec${r.state === 'recording' ? ' on-air' : ''}">
     <div class="logo">⏺</div>
     <div class="grow"><div class="name">${esc(r.title || 'Sin título')}</div>
-      <div class="meta">${esc(recStatus(r))} · ${esc(ch?.name || 'canal no disponible')}${bk}</div></div>
+      <div class="meta">${esc(recStatus(r))} · ${esc(chName)}${bk}</div></div>
     <button class="star gbtn" data-act="edit" aria-label="Editar">✎</button>
   </div>`;
 }
 
 function onRecClick(r, act) {
-  const saved = recs.find(x => x.id === r.id);
+  const saved = recList().find(x => x.id === r.id);
   if (!saved) return;
   if (act === 'edit') return editRec(saved);
+  if (saved.pi) {
+    if (saved.duration > 0 || saved.state === 'recording') return playPiRec(saved);   // the player waits for the first minutes
+    if (saved.state === 'scheduled') return toast(`Se grabará ${dayLabel(saved.start)} de ${hhmm(saved.start)} a ${hhmm(saved.end)} en la Raspberry Pi.`, 5000);
+    return toast(`No se grabó: ${saved.log?.at(-1)?.[1] || 'sin señal en ningún canal'}`, 6000);
+  }
   const ch = liveById(saved.ch);
   if (!ch) return toast('El canal de esta grabación ya no existe');
   if (Date.now() / 1000 < saved.start) return toast(`Empieza ${dayLabel(saved.start)} a las ${hhmm(saved.start)}. Desde ese momento podrás verlo desde el principio.`, 5000);
   playCatchup(ch, saved, null, saved.backups);
+}
+
+// ---- Raspberry Pi recorder
+// When the app is served by recorder/recorder.py (http://<pi>:8090), recordings are made there:
+// it records even with every screen off and switches to the backup channels when one cuts out.
+
+let recorder = null;   // last /api/status when served by the recorder
+let piRecs = [];
+
+async function piApi(method, path, body) {
+  const res = await fetch('/api/' + path, {
+    method, cache: 'no-store',
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+  return j;
+}
+
+async function initRecorder() {
+  try {
+    const s = await piApi('GET', 'status');
+    if (typeof s.version !== 'string') return;
+    recorder = s;
+  } catch { return; }
+  await loadPiRecs();
+  setInterval(loadPiRecs, 10000);
+  if (!recorder.ok) toast(`Grabador: ${recorder.error}`, 8000);
+}
+
+async function loadPiRecs() {
+  try {
+    recorder = await piApi('GET', 'status');
+    const arr = await piApi('GET', 'recs');
+    piRecs = arr.map(r => ({
+      ...r, pi: true,
+      ch: r.sources[0]?.id, chName: r.sources[0]?.name, backups: r.sources.slice(1).map(s => s.id),
+    }));
+  } catch { return; }
+  if (ui.tab === 'live' && data.live) {
+    renderFolders();
+    if (ui.folder.live === REC && !query && !series) refreshItems(false);
+  }
+  if (player.isOpen) updatePlayerButtons(player.current);
+}
+
+async function savePiRec(r, announce) {
+  const sources = [r.ch, ...r.backups].map(id => ({ id, name: liveById(id)?.name || id }));
+  const body = { title: r.title, start: Math.round(r.start), end: Math.round(r.end), sources, prog: r.prog };
+  try {
+    let saved;
+    if (r.id) saved = await piApi('PUT', 'recs/' + r.id, body);
+    else saved = await piApi('POST', 'recs', { ...body, creds: store.get('creds'), formats: api.liveFormats() });
+    await loadPiRecs();
+    recsChanged();
+    if (announce) toast(`Programada en la Raspberry Pi: ${dayLabel(r.start)} ${hhmm(r.start)}–${hhmm(r.end)}`
+      + (r.backups.length ? ` con ${r.backups.length} canal${r.backups.length > 1 ? 'es' : ''} de respaldo` : ' (añade canales de respaldo por si se corta)'), 5000);
+    return piRecs.find(x => x.id === saved.id) || saved;
+  } catch (ex) {
+    toast(`No se pudo programar: ${ex.message}`, 6000);
+    return null;
+  }
+}
+
+function playPiRec(r) {
+  mosaic.stop();
+  playerKind = 'rec';
+  const url = `/rec/${r.id}/index.m3u8`;
+  player.open([{ ...r, name: r.title }], 0, () => ({ title: r.title, fromStart: true, attempts: [['hls', url], ['native-hls', url]] }));
+}
+
+function piStatus(r) {
+  const size = r.size ? ` · ${fmtSize(r.size)}` : '';
+  const switched = new Set((r.parts || []).filter(p => p.segments).map(p => p.source)).size > 1 ? ' · usó respaldo' : '';
+  switch (r.state) {
+    case 'scheduled': return `Programada · ${dayLabel(r.start)} ${hhmm(r.start)}–${hhmm(r.end)}`;
+    case 'recording': return `● Grabando${r.current ? ` de ${r.current}` : ''} · ${fmtDur(r.duration || 1)}${size} · toca para verla desde el principio`;
+    case 'done': return r.duration ? `${dayLabel(r.start)} ${hhmm(r.start)} · ${fmtDur(r.duration)}${size}${switched}` : 'No se grabó nada';
+    default: return `No se pudo grabar · ${r.log?.at(-1)?.[1] || ''}`;
+  }
+}
+
+// Warn before something else uses the single connection while the Pi records.
+function recorderBusy() {
+  if (!recorder?.recording?.length) return false;
+  toast('Ojo: la Raspberry Pi está grabando con tu única conexión; ver otro canal puede cortar la grabación.', 6000);
+  return true;
 }
 
 // ---- recording / backup dialog
@@ -1021,7 +1162,9 @@ function editRec(r, isNew = false) {
   if (!ch) return;
   plan = { mode: 'rec', rec: r, ch, picked: [...r.backups], isNew };
   $('#planTitle').textContent = isNew ? `Programar en ${ch.name}` : `Grabación en ${ch.name}`;
-  $('#planHint').textContent = 'Se reproduce desde el archivo del proveedor (catch-up), incluso si llegas tarde o después de que termine.';
+  $('#planHint').textContent = recorder
+    ? 'Lo graba la Raspberry Pi en el pendrive aunque no haya nada encendido. Si el canal se corta, sigue con los de respaldo.'
+    : 'Se reproduce desde el archivo del proveedor (catch-up), incluso si llegas tarde o después de que termine.';
   $('#planFields').hidden = false;
   $('#planName').value = r.title || '';
   $('#planStart').value = toLocalInput(r.start);
@@ -1030,6 +1173,8 @@ function editRec(r, isNew = false) {
   if (![...sel.options].some(o => +o.value === dur)) sel.add(new Option(`${dur} min`, dur));
   sel.value = String(dur);
   $('#planDelete').hidden = isNew;
+  $('#planDelete').textContent = r.pi && r.state !== 'scheduled' ? 'Borrar grabación' : 'Borrar';
+  $('#planStart').disabled = !!r.pi && r.state !== 'scheduled';
   openPlan();
 }
 
@@ -1100,14 +1245,16 @@ $('#planDialog').addEventListener('close', () => {
     toast(p.picked.length ? `${p.picked.length} canal${p.picked.length > 1 ? 'es' : ''} de respaldo guardado${p.picked.length > 1 ? 's' : ''}` : 'Sin canales de respaldo', 2500);
     return;
   }
-  if (v === 'delete') {
+  if (v === 'delete' && p.rec.pi) {
+    piApi('DELETE', 'recs/' + p.rec.id).then(loadPiRecs).then(recsChanged, ex => toast(ex.message));
+  } else if (v === 'delete') {
     recs = recs.filter(x => x.id !== p.rec.id);
     saveRecs();
-    if (ui.tab === 'live' && data.live) { renderFolders(); if (ui.folder.live === REC) refreshItems(false); }
+    recsChanged();
   } else {
     const start = Math.floor(new Date($('#planStart').value).getTime() / 1000) || p.rec.start;
     const end = start + +$('#planDur').value * 60;
-    saveRec({ ...p.rec, title: $('#planName').value.trim() || 'Sin título', start, end, backups: p.picked }, p.isNew);
+    saveRec({ ...p.rec, title: $('#planName').value.trim() || 'Sin título', start: p.rec.pi && p.rec.state !== 'scheduled' ? p.rec.start : start, end, backups: p.picked }, p.isNew);
   }
   if ($('#guide').open && guideCh) { const c = tableCache.get(guideCh.id); if (c) renderGuide(guideCh, c.list); }
 });
@@ -1174,6 +1321,7 @@ async function openSeries(it) {
     const seasons = Object.keys(eps).filter(k => eps[k]?.length).sort((a, b) => a - b);
     Object.assign(series, { info, eps, seasons, season: seasons[seasons.length - 1] });   // latest season first
     renderSeries();
+    remote.refocus();
   } catch (ex) {
     if (series?.item === it) box.innerHTML = `<p class="error">${esc(ex.message)}</p><button data-retry>Reintentar</button>`;
   }
@@ -1191,7 +1339,7 @@ function renderSeries() {
     </div>
     ${seasons.length > 1 ? `<div class="chips">${seasons.map(s => `<button data-season="${esc(s)}" class="${s === season ? 'active' : ''}">T${esc(s)}</button>`).join('')}</div>` : ''}
     ${episodes.length ? '' : '<p class="muted">Sin episodios</p>'}
-    ${episodes.map((e, i) => `<div class="row ep" data-ep="${i}">
+    ${episodes.map((e, i) => `<div class="row ep" data-ep="${i}" tabindex="0">
       <span class="num">${esc(e.episode_num ?? i + 1)}</span>
       <div class="grow"><div class="name">${esc(e.title || `Episodio ${e.episode_num ?? i + 1}`)}</div><div class="meta">${esc([e.info?.duration, ago(+e.added)].filter(Boolean).join(' · '))}</div></div>
     </div>`).join('')}`;
@@ -1200,7 +1348,7 @@ function renderSeries() {
 $('#series').addEventListener('click', e => {
   if (e.target.closest('[data-retry]')) return openSeries(series.item);
   const s = e.target.closest('[data-season]');
-  if (s) { series.season = s.dataset.season; renderSeries(); return; }
+  if (s) { series.season = s.dataset.season; renderSeries(); remote.refocus(); return; }
   const ep = e.target.closest('[data-ep]');
   if (!ep) return;
   const eps = series.eps[series.season];
@@ -1362,6 +1510,7 @@ $('#diagBtn').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- boot
 
+initRecorder();
 const saved = store.get('creds');
 if (saved?.server && saved.username) startSession(saved);
 else showLogin();
