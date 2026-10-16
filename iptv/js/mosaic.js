@@ -3,8 +3,8 @@
 // and moves on. Only one stream is ever open. Tiles always fill the available space:
 // the page size follows the pane size and the grid shape follows the number of tiles.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016a';
-import { esc, initials } from './ui.js?v=20261016a';
+import { startEngine, resetVideo } from './engines.js?v=20261016b';
+import { esc, initials } from './ui.js?v=20261016b';
 
 const LOAD_TIMEOUT = 25;   // s to get a picture before skipping the channel
 const GAP = 700;           // ms between streams so the server frees the connection

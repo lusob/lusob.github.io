@@ -1,11 +1,11 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016a';
-import * as store from './store.js?v=20261016a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016a';
-import { Player } from './player.js?v=20261016a';
-import { Epg, hhmm } from './epg.js?v=20261016a';
-import { Mosaic } from './mosaic.js?v=20261016a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016b';
+import * as store from './store.js?v=20261016b';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016b';
+import { Player } from './player.js?v=20261016b';
+import { Epg, hhmm } from './epg.js?v=20261016b';
+import { Mosaic } from './mosaic.js?v=20261016b';
 
-const VERSION = '2026-10-16';
+const VERSION = '2026-10-16b';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all';
 const MAX_AGE = 12 * 3600e3;   // refetch lists older than 12 h
@@ -287,11 +287,30 @@ async function loadLazy(type, key, stale) {
   try {
     const cats = await api.categories(type);
     if (!cats.length) {
-      // No categories: only the full list can work.
-      stop();
-      const fresh = await api.fetchType(type);
+      // No categories: try the full list, then the M3U playlist (some panels only list
+      // movies/series there).
+      let fresh = null, apiNote = 'la API no devuelve carpetas';
+      try {
+        fresh = await api.fetchType(type);
+        if (!fresh.items.length) fresh = null;
+      } catch (ex) { apiNote = ex.message; }
+      if (!fresh) {
+        stop();
+        const stopM3u = paneLoading(type, { text: `La API no devuelve ${TYPES[type].toLowerCase()}; leyendo la lista M3U (puede tardar)…` });
+        try {
+          const m = await api.m3u();
+          if (!m[type].items.length) {
+            const err = new Error(`El servidor no ofrece ${TYPES[type].toLowerCase()} ni por la API ni en la lista M3U`);
+            err.detail = `${apiNote}; M3U: ${m.vod.items.length} pelis, ${m.series.items.length} series`;
+            throw err;
+          }
+          fresh = { ...m[type], m3u: true };
+        } finally {
+          stopM3u();
+        }
+      }
       fresh.ts = Date.now();
-      if (fresh.items.length) store.cachePut(key, fresh);
+      store.cachePut(key, fresh);
       return (data[type] = build(fresh));
     }
     const partial = { cats, byId: new Map(), loaded: new Set(), loading: new Set(), errors: new Map(), fullLoading: true, fullError: '' };
@@ -401,7 +420,7 @@ function build({ cats, items }, partial = null) {
   }
   const safeItems = items.filter(i => !i.hide);
   const hasAdult = items.length !== safeItems.length || folders.some(f => f.adult);
-  return { items, safeItems, folders, folderById, byId, hasAdult, partial };
+  return { items, safeItems, folders, folderById, byId, hasAdult, partial, noDate: items.some(i => i.noDate) };
 }
 
 const visItems = d => unlocked ? d.items : d.safeItems;
@@ -469,10 +488,10 @@ function renderFolderRow(f) {
   const p = data[ui.tab].partial;
   const meta = !f.virtual && pending(data[ui.tab], f)
     ? (p.loading.has(f.id) ? 'Cargando…' : p.errors.has(f.id) ? 'Error · toca para reintentar' : 'Toca para abrir')
-    : [count + (count === 1 ? ' elemento' : ' elementos'), ago(date)].filter(Boolean).join(' · ');
+    : [count + (count === 1 ? ' elemento' : ' elementos'), !data[ui.tab].noDate && ago(date)].filter(Boolean).join(' · ');
   return `<div class="row${active ? ' active' : ''}">
     <div class="grow"><div class="name">${esc(f.name)}</div><div class="meta">${meta}</div></div>
-    ${isNew(date) && f.id !== FAV ? '<span class="badge">Nuevo</span>' : ''}
+    ${!data[ui.tab].noDate && isNew(date) && f.id !== FAV ? '<span class="badge">Nuevo</span>' : ''}
     ${f.virtual ? '' : `<button class="star${favs[ui.tab].cats.has(f.id) ? ' on' : ''}" data-act="fav" aria-label="Favorito">★</button>`}
   </div>`;
 }
@@ -586,7 +605,7 @@ function epgNow(it) {
 
 function renderItemRow(it) {
   const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL;
-  const meta = [showFolder && folderName(it), ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
+  const meta = [showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
   let sub = `<div class="meta">${meta}</div>`;
   if (ui.tab === 'live') {
     const e = settings.epg && epg?.get(it.id);
@@ -598,7 +617,7 @@ function renderItemRow(it) {
   return `<div class="row">
     <div class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
     <div class="grow"><div class="name">${esc(it.name)}</div>${sub}</div>
-    ${isNew(it.added) ? '<span class="badge">Nuevo</span>' : ''}
+    ${!it.noDate && isNew(it.added) ? '<span class="badge">Nuevo</span>' : ''}
     <button class="star${favs[ui.tab].items.has(it.id) ? ' on' : ''}" data-act="fav" aria-label="Favorito">★</button>
   </div>`;
 }
@@ -643,7 +662,7 @@ function resolveLive(it) {
 }
 
 function resolveVod(it) {
-  const url = api.path('movie', it.id, it.ext);
+  const url = it.url ? api.wrap(it.url) : api.path('movie', it.id, it.ext);
   return { title: it.name, attempts: it.ext === 'm3u8' ? [['hls', url], ['native-hls', url]] : [['native', url]] };
 }
 
@@ -712,7 +731,7 @@ async function openSeries(it) {
   box.hidden = false;
   box.innerHTML = '<p class="muted"><span class="spinner small"></span>Cargando episodios…</p>';
   try {
-    let info = seriesCache.get(it.id);
+    let info = it.episodes ? { info: {}, episodes: it.episodes } : seriesCache.get(it.id);   // M3U series carry their episodes
     if (!info) { info = await api.seriesInfo(it.id); seriesCache.set(it.id, info); }
     if (series?.item !== it) return;
     let eps = info?.episodes || {};
@@ -756,7 +775,7 @@ $('#series').addEventListener('click', e => {
   const fav = favCtl('series', series.item);
   player.open(eps, +ep.dataset.ep, x => {
     const ext = x.container_extension || 'mp4';
-    const url = api.path('series', x.id, ext);
+    const url = x.url ? api.wrap(x.url) : api.path('series', x.id, ext);
     return {
       title: `${name} · T${season}E${x.episode_num ?? ''} ${x.title && !x.title.includes(name) ? x.title : ''}`.trim(),
       attempts: ext === 'm3u8' ? [['hls', url], ['native-hls', url]] : [['native', url]],
@@ -884,16 +903,19 @@ $('#diagBtn').addEventListener('click', async () => {
     lines[lines.length - 1] = `${label}: ${await api.probe(action, extra, timeout)}`; show();
   };
   await run('login', null, {}, 30000);
+  const si = api.info?.server_info;
+  if (si && (si.url || si.port)) lines.push(`server_info: ${[si.url, si.port, si.https_port, si.server_protocol, si.timezone].filter(Boolean).join(' · ')}`);
   for (const t of ['vod', 'series']) {
     const [ca, ia] = t === 'vod' ? ['get_vod_categories', 'get_vod_streams'] : ['get_series_categories', 'get_series'];
     await run(ca, ca, {}, 45000);
     const first = data[t]?.partial?.cats[0] || data[t]?.folders[0];
-    if (first) await run(`${ia} (carpeta ${first.name})`, ia, { category_id: first.id }, 90000);
+    if (first && !String(first.id).startsWith('m3u:')) await run(`${ia} (carpeta ${first.name})`, ia, { category_id: first.id }, 90000);
     await run(`${ia} (completa)`, ia, {}, 180000);
   }
+  await run('get.php (lista M3U)', 'm3u', { type: 'm3u_plus', output: 'ts' }, 240000);
   for (const t of ['vod', 'series']) {
     const d = data[t];
-    lines.push(`${TYPES[t]} en la app: ${!d ? 'sin cargar' : d.error ? `error: ${d.error} (${d.diag || ''})` : `${d.items.length} elementos, ${d.folders.length} carpetas${d.partial ? `, por carpetas (completa: ${d.partial.fullLoading ? 'descargando' : d.partial.fullError || 'ok'})` : ''}`}`);
+    lines.push(`${TYPES[t]} en la app: ${!d ? 'sin cargar' : d.error ? `error: ${d.error} (${d.diag || ''})` : `${d.items.length} elementos, ${d.folders.length} carpetas${d.noDate ? ' (de la lista M3U)' : ''}${d.partial ? `, por carpetas (completa: ${d.partial.fullLoading ? 'descargando' : d.partial.fullError || 'ok'})` : ''}`}`);
   }
   show();
   btn.disabled = false;

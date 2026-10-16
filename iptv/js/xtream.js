@@ -144,20 +144,60 @@ export class Xtream {
     return { cats, items };
   }
 
+  // Fallback for panels whose API returns no movies/series: the M3U playlist (get.php), which
+  // apps like IPTVnator read. Downloaded once per session and shared by both sections.
+  m3u() {
+    if (this.m3uPromise) return this.m3uPromise;
+    const q = new URLSearchParams({ username: this.username, password: this.password, type: 'm3u_plus', output: 'ts' });
+    const url = this.wrap(`${this.server}/get.php?${q}`);
+    this.m3uPromise = (async () => {
+      let text;
+      for (let n = 0; ; n++) {
+        try { text = await this.requestText(url, 240000); break; } catch (e) {
+          if (!e.retry || n >= 1) throw withStep(e, 'get.php (lista M3U)');
+          await sleep(3000);
+        }
+      }
+      return parseM3u(text);
+    })();
+    this.m3uPromise.catch(() => { this.m3uPromise = null; });
+    return this.m3uPromise;
+  }
+
+  async requestText(url, timeout) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeout);
+    try {
+      let res;
+      try { res = await fetch(url, { signal: ctl.signal }); } catch (e) {
+        throw new ApiError(e.name === 'AbortError' ? 'El servidor no respondió a tiempo.' : 'No se pudo conectar con el servidor.', true);
+      }
+      if (!res.ok) throw new ApiError(`El servidor respondió HTTP ${res.status}`, res.status >= 500 || res.status === 429);
+      try { return await res.text(); } catch { throw new ApiError('Se cortó la descarga.', true); }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Diagnostics: time, size and item count of one API call.
   async probe(action, extra = {}, timeout = 120000) {
     const q = new URLSearchParams({ username: this.username, password: this.password, ...extra });
-    if (action) q.set('action', action);
+    if (action && action !== 'm3u') q.set('action', action);
+    const page = action === 'm3u' ? 'get.php' : 'player_api.php';
     const t0 = performance.now();
     try {
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), timeout);
-      const res = await fetch(this.wrap(`${this.server}/player_api.php?${q}`), { signal: ctl.signal });
+      const res = await fetch(this.wrap(`${this.server}/${page}?${q}`), { signal: ctl.signal });
       const text = await res.text();
       clearTimeout(timer);
       const ms = Math.round(performance.now() - t0);
       let count = '?';
       try { const j = JSON.parse(text); const a = toArray(j); count = a ? a.length : (j && typeof j === 'object' ? 'objeto' : typeof j); } catch { count = 'no es JSON'; }
+      if (action === 'm3u') {
+        const n = k => (text.match(new RegExp(`/${k}/`, 'g')) || []).length;
+        count = `${n('live')} directo, ${n('movie')} pelis, ${n('series')} episodios`;
+      }
       return `HTTP ${res.status} · ${ms} ms · ${fmtBytes(text.length)} · ${count}`;
     } catch (e) {
       return `ERROR ${e.name === 'AbortError' ? 'tiempo agotado' : e.message} · ${Math.round(performance.now() - t0)} ms`;
@@ -225,6 +265,58 @@ function toArray(x) {
     if (v.every(e => e && typeof e === 'object')) return v;
   }
   return null;
+}
+
+// M3U → { vod: {cats, items}, series: {cats, items} }. Movies and episodes are told apart by
+// their URL (/movie/ or /series/); episodes are grouped into series by name ("Show S01 E02").
+export function parseM3u(text) {
+  const out = { vod: { cats: new Map(), items: [] }, series: { cats: new Map(), items: new Map() } };
+  const lines = text.split(/\r?\n/);
+  let inf = null, order = 0;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith('#EXTINF')) { inf = line; continue; }
+    if (!line || line.startsWith('#') || !inf) continue;
+    const m = /\/(movie|series)\/[^/]+\/[^/]+\/([^/?#]+?)\.([a-z0-9]+)(?:[?#]|$)/i.exec(line);
+    const attrs = {};
+    for (const a of inf.matchAll(/([\w-]+)="([^"]*)"/g)) attrs[a[1].toLowerCase()] = a[2];
+    const name = (attrs['tvg-name'] || inf.slice(inf.lastIndexOf(',') + 1)).trim() || inf.slice(inf.lastIndexOf(',') + 1).trim();
+    const group = attrs['group-title'] || 'Sin categoría';
+    inf = null;
+    if (!m) continue;
+    const kind = m[1].toLowerCase() === 'movie' ? 'vod' : 'series';
+    const sec = out[kind];
+    const catId = 'm3u:' + group;
+    sec.cats.set(catId, { id: catId, name: group });
+    const adult = /^1$/.test(attrs['is-adult'] || '');
+    // Playlist order stands in for the date (later entries are usually newer).
+    order++;
+    if (kind === 'vod') {
+      sec.items.push({ id: m[2], name, icon: attrs['tvg-logo'] || '', cats: [catId], added: order, ext: m[3], url: line, adult, noDate: true });
+      continue;
+    }
+    const e = /^(.*?)[\s._-]*\bS(\d{1,3})[\s._-]*E(\d{1,4})\b(.*)$/i.exec(name);
+    const show = (e ? e[1] : name).replace(/[\s._-]+$/, '') || name;
+    const season = e ? String(+e[2]) : '1';
+    let it = sec.items.get(show);
+    if (!it) {
+      it = { id: 'm3u:' + show, name: show, icon: attrs['tvg-logo'] || '', cats: [catId], added: order, adult, noDate: true, episodes: {} };
+      sec.items.set(show, it);
+    }
+    if (!it.cats.includes(catId)) it.cats.push(catId);
+    it.added = order;
+    (it.episodes[season] ||= []).push({
+      id: m[2], episode_num: e ? +e[3] : it.episodes[season].length + 1, title: (e && e[4].replace(/^[\s._-]+/, '')) || name,
+      container_extension: m[3], url: line,
+    });
+  }
+  for (const it of out.series.items.values()) {
+    for (const k in it.episodes) it.episodes[k].sort((a, b) => a.episode_num - b.episode_num);
+  }
+  return {
+    vod: { cats: [...out.vod.cats.values()], items: merge(out.vod.items) },
+    series: { cats: [...out.series.cats.values()], items: [...out.series.items.values()] },
+  };
 }
 
 function dedupe(type, raw, catId) {
