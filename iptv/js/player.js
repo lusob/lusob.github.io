@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016k';
+import { startEngine, resetVideo } from './engines.js?v=20261016l';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
@@ -249,7 +249,9 @@ export class Player {
 
   drawSk() {
     const span = this.skSpan(), avail = this.skAvail(), t = this.video.currentTime || 0;
-    const hm = s => new Date((this.sk.start + s) * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    // Still recording: wall-clock times (like catch-up). Finished: just elapsed / length, like any video.
+    const dur = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
+    const hm = this.sk.growing() ? s => new Date((this.sk.start + s) * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : dur;
     this.cuBar.querySelector('#cuFill').style.width = `${Math.min(1, t / span) * 100}%`;
     this.cuBar.querySelector('#cuAvail').style.width = `${Math.min(1, avail / span) * 100}%`;
     this.cuBar.querySelector('#cuTime').textContent = hm(t);

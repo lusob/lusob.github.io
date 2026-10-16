@@ -4,8 +4,8 @@
 // - Up / Down ("pilot") browses the neighbouring channels in a translucent footer with their
 //   programme; nothing changes until OK.
 
-import { esc, initials, VList } from './ui.js?v=20261016k';
-import { hhmm } from './epg.js?v=20261016k';
+import { esc, initials, VList } from './ui.js?v=20261016l';
+import { hhmm } from './epg.js?v=20261016l';
 
 const PILOT_HIDE = 6000;   // ms without keys before the footer goes away (without switching)
 const INFO_HIDE = 4000;    // footer shown briefly after every channel change
