@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261016j">
+  <link rel="stylesheet" href="css/app.css?v=20261016k">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261016j"></script>
+  <script type="module" src="js/app.js?v=20261016k"></script>
 </head>
 <body>
 
@@ -77,7 +77,7 @@
 
   <!-- Player -->
   <div id="player" hidden>
-    <video id="video" controls playsinline></video>
+    <video id="video" controls playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
     <div class="pbar">
       <button id="pClose" class="icon" aria-label="Cerrar">✕</button>
       <button id="pList" class="icon" aria-label="Lista de canales" hidden>☰</button>
@@ -98,6 +98,7 @@
       <button id="pFs" class="icon" aria-label="Pantalla completa">⛶</button>
     </div>
     <div id="pCu" hidden>
+      <button id="cuPlay" class="icon" aria-label="Pausa">❚❚</button>
       <button id="cuBack" class="icon txt" aria-label="Atrás 5 minutos">« 5 min</button>
       <span id="cuTime"></span>
       <div id="cuTrack"><div id="cuAvail"></div><div id="cuFill"></div></div>
@@ -107,6 +108,7 @@
     </div>
     <div id="pMsg"></div>
     <button id="pRetry" class="primary" hidden>Reintentar</button>
+    <button id="pPlay" class="primary" hidden>▶ Reproducir</button>
     <div id="pMenu" hidden></div>
     <div id="pilot" hidden></div>
     <aside id="zap" hidden>

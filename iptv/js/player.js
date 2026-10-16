@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016j';
+import { startEngine, resetVideo } from './engines.js?v=20261016k';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
@@ -47,6 +47,8 @@ export class Player {
     this.prevBtn.onclick = () => this.step(-1);
     this.nextBtn.onclick = () => this.step(1);
     this.retryBtn.onclick = () => this.load();
+    this.playBtn = root.querySelector('#pPlay');
+    this.playBtn.onclick = e => { e.stopPropagation(); this.unblock(); };
     root.querySelector('#pFs').onclick = () => this.fullscreen();
     this.zoomBtn = root.querySelector('#pZoom');
     this.zoomBtn.onclick = () => {
@@ -80,6 +82,9 @@ export class Player {
       setTimeout(() => this.updateTracks(), 100);
     });
     root.addEventListener('click', () => this.closeMenu());
+    const cuPlay = root.querySelector('#cuPlay');
+    cuPlay.onclick = () => { if (this.video.paused) this.play(); else this.video.pause(); };
+    for (const ev of ['play', 'pause', 'playing']) this.video.addEventListener(ev, () => { cuPlay.textContent = this.video.paused ? '▶' : '❚❚'; });
     root.querySelector('#cuBack').onclick = () => this.sk ? this.skSeek(this.video.currentTime - 300) : this.seek(this.cuPos() - 300);
     root.querySelector('#cuFwd').onclick = () => this.sk ? this.skSeek(this.video.currentTime + 300) : this.seek(this.cuPos() + 300);
     root.querySelector('#cuLive').onclick = () => this.sk ? this.skSeek(Infinity) : this.goLive('');
@@ -196,6 +201,8 @@ export class Player {
 
   updateTitle() {
     const s = this.sources[this.src];
+    // Browser controls only for films and episodes: live, catch-up and recordings have our own bar.
+    this.video.controls = !(this.live || this.cu || this.sk);
     this.title.textContent = this.baseTitle + (this.src > 0 ? ` · respaldo: ${s.name}` : '');
     this.root.classList.toggle('catchup', !!(this.cu || this.sk));
     this.drawCu();
@@ -382,6 +389,7 @@ export class Player {
     this.cur = i;
     this.lastTime = 0;
     this.cuT0 = null;
+    this.video.muted = false;   // muted only as a fallback when the browser refuses to play
     this.retryBtn.textContent = 'Reintentar';
     this.status(status);
     this.retryBtn.hidden = true;
@@ -397,6 +405,7 @@ export class Player {
       prebuffer: this.live && engine === 'mpegts' ? Math.min(eff, 10) : 0,
       onStatus: t => { if (tok === this.token) { this.stopTicker(); this.msg(t); } },
       onTracks: () => { if (tok === this.token) this.updateTracks(); },
+      onBlocked: () => { if (tok === this.token) this.blockedPlay(); },
     }, fail);
     this.updateTracks();
   }
@@ -510,6 +519,45 @@ export class Player {
 
   stopTicker() { clearInterval(this.ticker); }
 
+  // ---------------------------------------------------------------- autoplay blocked
+
+  // The browser would not start playback on its own: try muted (usually allowed), and offer
+  // to turn the sound on; if even that is refused, a big button starts it with the next key press.
+  blockedPlay() {
+    const v = this.video, tok = this.token;
+    this.clearTimer();
+    this.stopTicker();
+    if (v.muted) return this.showPlayBtn('▶ Reproducir');
+    v.muted = true;
+    const p = v.play();
+    (p || Promise.resolve()).then(() => {
+      if (tok === this.token) this.showPlayBtn('🔊 Activar sonido');
+    }, () => {
+      if (tok === this.token) this.showPlayBtn('▶ Reproducir');
+    });
+  }
+
+  showPlayBtn(label) {
+    this.blocked = true;
+    this.msg(label.startsWith('▶') ? 'Pulsa OK para empezar' : '');
+    this.playBtn.textContent = label;
+    this.playBtn.hidden = false;
+    this.root.classList.remove('idle');
+    this.playBtn.focus();
+  }
+
+  // Called from a key press or a tap, which the browser accepts as permission to play.
+  unblock() {
+    const v = this.video;
+    this.blocked = false;
+    this.playBtn.hidden = true;
+    this.playBtn.blur();
+    v.muted = false;
+    const p = v.play();
+    if (p) p.catch(() => { v.muted = true; v.play()?.catch(() => {}); });
+    if (!this.played) this.armTimer(LOAD_TIMEOUT);
+  }
+
   // ---------------------------------------------------------------- audio / subtitles
 
   updateTracks() {
@@ -537,11 +585,13 @@ export class Player {
 
   play() {
     const p = this.video.play();
-    if (p) p.catch(() => {});
+    if (p) p.catch(e => { if (e?.name === 'NotAllowedError') this.blockedPlay(); });
   }
 
   teardown() {
     this.clearTimer();
+    this.playBtn.hidden = true;
+    this.blocked = false;
     this.stopTicker();
     clearInterval(this.filling);
     this.filling = 0;

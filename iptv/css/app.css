@@ -234,6 +234,7 @@ body.in-series #back { display: inline-block; }
 .diag { font-size: 13px; color: var(--muted); word-break: break-word; }
 #diagOut { margin: 0; padding: 10px; max-height: 260px; overflow-y: auto; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; user-select: text; }
 #pRetry { position: absolute; left: 50%; top: calc(50% + 60px); transform: translateX(-50%); }
+#pPlay { position: absolute; left: 50%; top: calc(50% + 40px); transform: translateX(-50%); z-index: 2; font-size: 22px; padding: 0 28px; min-height: 64px; }
 #player.idle .pbar { opacity: 0; pointer-events: none; }
 #pMsg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80%; text-align: center; color: #ddd; pointer-events: none; }
 #pMsg:empty { display: none; }

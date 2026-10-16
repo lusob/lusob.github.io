@@ -1,14 +1,14 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016j';
-import * as store from './store.js?v=20261016j';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016j';
-import { Player } from './player.js?v=20261016j';
-import { Epg, hhmm } from './epg.js?v=20261016j';
-import { Mosaic } from './mosaic.js?v=20261016j';
-import { initRemote } from './remote.js?v=20261016j';
-import { autoBackups } from './backups.js?v=20261016j';
-import { Zapper } from './zap.js?v=20261016j';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016k';
+import * as store from './store.js?v=20261016k';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016k';
+import { Player } from './player.js?v=20261016k';
+import { Epg, hhmm } from './epg.js?v=20261016k';
+import { Mosaic } from './mosaic.js?v=20261016k';
+import { initRemote } from './remote.js?v=20261016k';
+import { autoBackups } from './backups.js?v=20261016k';
+import { Zapper } from './zap.js?v=20261016k';
 
-const VERSION = '2026-10-16j';
+const VERSION = '2026-10-16k';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -1222,7 +1222,7 @@ function playPiRec(r) {
       slow: 'la Raspberry Pi tarda en responder',
       fail: 'No se pudo reproducir la grabación desde la Raspberry Pi. Comprueba que este dispositivo está en la red de casa y vuelve a intentarlo.',
     },
-    seekbar: { start, planned: r.end - start, growing: () => piRecs.find(x => x.id === r.id)?.state === 'recording' },
+    seekbar: { start, planned: r.state === 'recording' ? r.end - start : 0, growing: () => piRecs.find(x => x.id === r.id)?.state === 'recording' },
   }));
 }
 

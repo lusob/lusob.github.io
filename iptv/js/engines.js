@@ -3,9 +3,10 @@
 // on a fatal error and returns a handle with destroy().
 
 export function startEngine(v, engine, url, opt, fail) {
-  const { buffer = 10, light = false, resumeAt = 0, prebuffer = 0, fromStart = false, onStatus, onTracks } = opt;
+  const { buffer = 10, light = false, resumeAt = 0, prebuffer = 0, fromStart = false, onStatus, onTracks, onBlocked } = opt;
   const failLater = () => { Promise.resolve().then(fail); return { destroy() {} }; };
-  const play = () => { const p = v.play(); if (p) p.catch(() => {}); };
+  // TV browsers (Android WebView) refuse to start a video outside a key press / tap: report it.
+  const play = () => { const p = v.play(); if (p) p.catch(e => { if (e?.name === 'NotAllowedError') onBlocked?.(); }); };
 
   if (engine === 'hls') {
     const Hls = window.Hls;

@@ -105,7 +105,13 @@ export function initRemote(ctx) {
     if (player.isOpen) {
       player.wake();
       const menu = player.menu;
-      const bar = [...player.root.querySelectorAll('.pbar button, #pCu button, #pRetry')].filter(shown);
+      const bar = [...player.root.querySelectorAll('.pbar button, #pCu button, #pRetry, #pPlay')].filter(shown);
+      // Playback refused by the browser: any OK starts it (a key press counts as permission).
+      if (player.blocked && (k === 'Enter' || k === ' ' || k === 'MediaPlayPause' || k === 'MediaPlay')) {
+        e.preventDefault();
+        player.unblock();
+        return;
+      }
       const inBar = bar.includes(document.activeElement);
       // Live: Left = channel list, Up/Down = pilot footer, OK = info / switch (see zap.js).
       if (menu.hidden && (zap?.isOpen || !(inBar && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Enter'))) && zap?.key(k, isBack)) {
