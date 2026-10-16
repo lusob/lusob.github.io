@@ -1,16 +1,21 @@
-// Fullscreen overlay player. Each item resolves to a list of attempts ([engine, url]);
-// on a fatal error the next attempt is tried (e.g. hls.js → native HLS → mpegts.js).
+// Fullscreen overlay player. Each item resolves to one or more sources (a channel and its
+// backups), each with a list of attempts ([engine, url]); on a fatal error the next attempt is
+// tried (e.g. hls.js → native HLS → mpegts.js), and when a source is dead or keeps cutting out
+// the next source takes over. Catch-up (the provider's archive) is played the same way, with
+// the wall-clock position kept across reconnects and source switches.
 // Built for slow/overloaded servers: long timeouts, retry rounds with backoff, a stall
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016b';
+import { startEngine, resetVideo } from './engines.js?v=20261016c';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
 const LOAD_TIMEOUT = 60;     // s without playback before an attempt is considered failed
 const STALL_WINDOW = 180e3;  // a second cut within this time grows the buffer
 const FILL_STUCK = 25;       // s without the buffer growing while refilling → reconnect
+const BACKUP_RECONNECTS = 2; // with backups: reconnects before switching source
+const LIVE_EDGE = 90;        // catch-up closer than this (s) to now → switch to live
 
 export class Player {
   // getSettings() → { buffer, bufferMax } in seconds
@@ -28,6 +33,7 @@ export class Player {
     this.audioBtn = root.querySelector('#pAudio');
     this.subsBtn = root.querySelector('#pSubs');
     this.menu = root.querySelector('#pMenu');
+    this.cuBar = root.querySelector('#pCu');
     this.token = 0;
     this.pushed = false;
     this.eff = null;         // current adaptive buffer (s), kept across channels
@@ -56,12 +62,28 @@ export class Player {
       setTimeout(() => this.updateTracks(), 100);
     });
     root.addEventListener('click', () => this.closeMenu());
+    root.querySelector('#cuBack').onclick = () => this.seek(this.cuPos() - 300);
+    root.querySelector('#cuFwd').onclick = () => this.seek(this.cuPos() + 300);
+    root.querySelector('#cuLive').onclick = () => this.goLive('');
+    root.querySelector('#cuTrack').addEventListener('click', e => {
+      const r = e.currentTarget.getBoundingClientRect();
+      const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      this.seek(this.cu.start + f * (this.cu.end - this.cu.start));
+    });
 
     const v = this.video;
     v.addEventListener('playing', () => this.onPlaying());
     v.addEventListener('timeupdate', () => { if (!v.paused && v.currentTime > this.lastTime + 0.2) this.onPlaying(); });
     v.addEventListener('waiting', () => this.onWaiting());
     v.addEventListener('loadedmetadata', () => this.updateTracks());
+    v.addEventListener('timeupdate', () => {
+      if (this.cu && this.cuT0 != null && this.cuPos() >= this.cu.end) this.finish();
+    });
+    v.addEventListener('ended', () => {
+      if (!this.cu) return;
+      if (this.cuPos() >= this.cu.end - LIVE_EDGE) this.finish();
+      else this.failNow?.();
+    });
 
     // Show the bar on interaction, hide it after a few seconds of playback.
     const wake = () => {
@@ -88,7 +110,9 @@ export class Player {
   get isOpen() { return !this.root.hidden; }
   get current() { return this.queue?.[this.index]; }
 
-  // queue: items; resolve(item) → { title, live, attempts: [[engine, url], ...] }
+  // queue: items; resolve(item) → { title, live, attempts: [[engine, url], ...] } or
+  //   { title, live, sources: [{ name, attempts(pos) }], catchup?: { start, end, pos }, liveSources? }
+  //   (catch-up: positions are unix seconds; liveSources take over when catch-up reaches now)
   // fav (optional): { has(item), toggle(item) }
   open(queue, index, resolve, fav = null) {
     this.queue = queue;
@@ -108,22 +132,116 @@ export class Player {
   }
 
   load() {
-    const { title, live, attempts } = this.resolve(this.current);
-    this.title.textContent = title;
+    const r = this.resolve(this.current);
+    this.baseTitle = r.title;
     this.setInfo('');
     this.prevBtn.disabled = this.index <= 0;
     this.nextBtn.disabled = this.index >= this.queue.length - 1;
-    this.live = !!live;
-    this.attempts = attempts;
-    this.round = 0;
-    this.reconnects = 0;
-    this.played = false;
+    this.live = !!r.live;
+    this.sources = r.sources || [{ name: r.title, attempts: () => r.attempts }];
+    this.liveSources = r.liveSources || null;
+    this.cu = r.catchup ? { start: r.catchup.start, end: r.catchup.end, base: r.catchup.pos ?? r.catchup.start } : null;
+    this.src = 0;
+    this.switches = 0;
+    this.resetCounters();
     this.resumeAt = 0;
     this.closeMenu();
     this.updateFav();
     this.wake();
+    this.startCuTimer();
+    if (this.cu && this.cu.base > Date.now() / 1000 - LIVE_EDGE) return this.goLive('');
+    this.prepare();
     this.onchange?.(this.current);
-    this.attempt(0, 'Conectando…');
+    this.attempt(0, this.cu ? 'Cargando diferido…' : 'Conectando…');
+  }
+
+  resetCounters() {
+    this.round = 0;
+    this.reconnects = 0;
+    this.played = false;
+  }
+
+  // Attempts of the current source (catch-up: starting at the current position, whole minutes).
+  prepare() {
+    if (this.cu) this.cu.base = Math.floor(this.cu.base / 60) * 60;
+    this.attempts = this.sources[this.src].attempts(this.cu ? this.cu.base : 0);
+    this.updateTitle();
+  }
+
+  updateTitle() {
+    const s = this.sources[this.src];
+    this.title.textContent = this.baseTitle + (this.src > 0 ? ` · respaldo: ${s.name}` : '');
+    this.root.classList.toggle('catchup', !!this.cu);
+    this.drawCu();
+  }
+
+  setSources(sources) {
+    if (this.cu || !sources?.length) return;
+    this.sources = sources;
+    if (this.src >= sources.length) this.src = 0;
+    this.updateTitle();
+  }
+
+  // ---------------------------------------------------------------- catch-up
+
+  cuPos() {
+    if (!this.cu) return 0;
+    const t = this.cuT0 == null ? 0 : Math.max(0, this.video.currentTime - this.cuT0);
+    return this.cu.base + t;
+  }
+
+  seek(pos) {
+    if (!this.cu) return;
+    const now = Date.now() / 1000;
+    pos = Math.max(this.cu.start, Math.min(pos, this.cu.end - 30));
+    if (pos > now - LIVE_EDGE) return this.goLive('');
+    this.cu.base = pos;
+    this.resetCounters();
+    this.prepare();
+    this.attempt(this.cur && this.played ? this.cur : 0, 'Saltando…');
+  }
+
+  // Leave catch-up for the live channel (when the archive reaches "now", or on request).
+  goLive(text) {
+    if (!this.liveSources) return this.finish();
+    this.cu = null;
+    this.sources = this.liveSources;
+    this.src = 0;
+    this.switches = 0;
+    this.resetCounters();
+    this.prepare();
+    this.onchange?.(this.current);
+    this.attempt(0, text || 'Pasando al directo…');
+  }
+
+  finish() {
+    if (!this.cu) return;
+    this.teardown();
+    this.token++;
+    this.cu.base = this.cu.end;
+    this.drawCu();
+    this.msg('Fin del programa.');
+    this.retryBtn.textContent = 'Ver de nuevo';
+    this.retryBtn.hidden = false;
+  }
+
+  startCuTimer() {
+    clearInterval(this.cuTimer);
+    if (this.cu) this.cuTimer = setInterval(() => this.drawCu(), 1000);
+  }
+
+  drawCu() {
+    this.cuBar.hidden = !this.cu;
+    if (!this.cu) return;
+    const { start, end } = this.cu;
+    const span = end - start, now = Date.now() / 1000;
+    const pos = Math.min(end, this.cuPos());
+    const hm = t => new Date(t * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    this.cuBar.querySelector('#cuFill').style.width = `${(pos - start) / span * 100}%`;
+    this.cuBar.querySelector('#cuAvail').style.width = `${Math.min(1, (now - start) / span) * 100}%`;
+    this.cuBar.querySelector('#cuTime').textContent = hm(pos);
+    this.cuBar.querySelector('#cuEnd').textContent = hm(end);
+    this.cuBar.querySelector('#cuLive').hidden = !this.liveSources || now > end;
   }
 
   setInfo(html) {
@@ -196,6 +314,8 @@ export class Player {
     const tok = ++this.token;
     this.cur = i;
     this.lastTime = 0;
+    this.cuT0 = null;
+    this.retryBtn.textContent = 'Reintentar';
     this.status(status);
     this.retryBtn.hidden = true;
     this.armTimer(LOAD_TIMEOUT);
@@ -216,31 +336,63 @@ export class Player {
   failed() {
     const v = this.video;
     if (!this.live && v.currentTime > 1) this.resumeAt = v.currentTime;
+    const multi = this.sources.length > 1;
     let next, label, delay;
     if (this.played) {
-      // Was playing: reconnect with the same engine.
-      if (++this.reconnects > MAX_RECONNECTS) return this.giveUp('Se ha perdido la conexión con el canal.');
+      // Was playing: reconnect with the same engine (catch-up: from where it stopped).
+      const budget = multi ? BACKUP_RECONNECTS : MAX_RECONNECTS;
+      if (++this.reconnects > budget) {
+        return this.nextSource('Se ha cortado la señal.') || this.giveUp('Se ha perdido la conexión con el canal.');
+      }
+      if (this.cu) {
+        this.cu.base = this.cuPos();
+        if (this.cu.base >= this.cu.end - 30) return this.finish();
+        if (this.cu.base > Date.now() / 1000 - LIVE_EDGE) return this.goLive('Has alcanzado el directo.');
+        this.prepare();
+      }
       next = this.cur;
-      label = `Reconectando… (${this.reconnects}/${MAX_RECONNECTS})`;
+      label = `Reconectando… (${this.reconnects}/${budget})`;
       delay = Math.min(1000 * this.reconnects, 5000);
     } else {
       // Never played: next engine, then further rounds with increasing pauses.
+      const rounds = multi ? 1 : ROUNDS;
       next = this.cur + 1;
       delay = 0;
       if (next >= this.attempts.length) {
-        if (++this.round >= ROUNDS) {
-          return this.giveUp('No se pudo reproducir. El servidor puede estar saturado; prueba de nuevo en un momento. ' +
-            'Si es http:// o no permite CORS, configura un proxy en Ajustes.');
+        if (++this.round >= rounds) {
+          if (this.nextSource(this.cu ? 'Sin archivo en este canal.' : 'Sin señal.')) return;
+          if (this.cu && this.liveSources && this.cu.end > Date.now() / 1000) return this.goLive('Sin archivo disponible: mostrando el directo.');
+          return this.giveUp(this.cu
+            ? 'No se pudo cargar el diferido. Puede que el proveedor no tenga archivo de este programa o que la hora no cuadre (Ajustes → Ajuste de hora del diferido).'
+            : 'No se pudo reproducir. El servidor puede estar saturado; prueba de nuevo en un momento. ' +
+              'Si es http:// o no permite CORS, configura un proxy en Ajustes.');
         }
         next = 0;
         delay = 3000 * this.round;
       }
-      label = this.round ? `Servidor lento, reintentando (${this.round + 1}/${ROUNDS})…` : 'Conectando…';
+      label = this.round ? `Servidor lento, reintentando (${this.round + 1}/${rounds})…` : this.cu ? 'Cargando diferido…' : 'Conectando…';
     }
     this.teardown();
     this.status(label);
     const tok = ++this.token;
     setTimeout(() => { if (tok === this.token) this.attempt(next, label); }, delay);
+  }
+
+  // Switch to the next backup source (round-robin, limited); false when there is none left.
+  nextSource(reason) {
+    const n = this.sources.length;
+    if (n < 2 || this.switches >= n * 2) return false;
+    if (this.cu) this.cu.base = this.cuPos();
+    this.switches++;
+    this.src = (this.src + 1) % n;
+    this.resetCounters();
+    this.prepare();
+    const label = `${reason} Probando ${this.src ? 'respaldo' : 'canal principal'}: ${this.sources[this.src].name}…`;
+    this.teardown();
+    this.status(label);
+    const tok = ++this.token;
+    setTimeout(() => { if (tok === this.token) this.attempt(0, label); }, 800);
+    return true;
   }
 
   giveUp(text) {
@@ -252,6 +404,7 @@ export class Player {
 
   onPlaying() {
     if (this.filling) return;
+    if (this.cu && this.cuT0 == null) this.cuT0 = this.video.currentTime;
     this.lastTime = this.video.currentTime;
     this.played = true;
     this.clearTimer();
@@ -350,6 +503,10 @@ export class Player {
     this.root.hidden = true;
     this.msg('');
     this.retryBtn.hidden = true;
+    clearInterval(this.cuTimer);
+    this.cu = null;
+    this.cuBar.hidden = true;
+    this.root.classList.remove('catchup');
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     if (this.pushed && !fromPopstate) { this.pushed = false; history.back(); }
     this.onclose?.();

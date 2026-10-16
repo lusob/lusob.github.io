@@ -1,13 +1,14 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016b';
-import * as store from './store.js?v=20261016b';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016b';
-import { Player } from './player.js?v=20261016b';
-import { Epg, hhmm } from './epg.js?v=20261016b';
-import { Mosaic } from './mosaic.js?v=20261016b';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016c';
+import * as store from './store.js?v=20261016c';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016c';
+import { Player } from './player.js?v=20261016c';
+import { Epg, hhmm } from './epg.js?v=20261016c';
+import { Mosaic } from './mosaic.js?v=20261016c';
 
-const VERSION = '2026-10-16b';
+const VERSION = '2026-10-16c';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
-const FAV = '__fav', ALL = '__all';
+const FAV = '__fav', ALL = '__all', REC = '__rec';
+const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
 const MAX_AGE = 12 * 3600e3;   // refetch lists older than 12 h
 const ADULT_RE = /(^|[^\p{L}])(adult[oa]?s?|xxx|porn\p{L}*|er[oó]tic\p{L}*|hentai)(?!\p{L})|18\s*\+|\+\s*18/iu;
 const isAdultName = n => ADULT_RE.test(n) && !/adult\s*swim/i.test(n);
@@ -25,7 +26,7 @@ let mosaicOn = false;
 let playerKind = '';           // 'live' | 'vod' | 'series'
 const seriesCache = new Map();
 const ui = Object.assign({ tab: 'live', folder: {} }, store.get('ui', {}));
-const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 6, epg: true }, store.get('settings', {}));
+const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 6, epg: true, cuShift: 0 }, store.get('settings', {}));
 
 const player = new Player($('#player'), () => settings);
 const folderList = new VList($('#folders'), 64, renderFolderRow, onFolderClick);
@@ -33,7 +34,7 @@ const itemList = new VList($('#items'), 76, renderItemRow, onItemClick, () => sc
 let epg = null;
 const mosaic = new Mosaic($('#mosaic'), {
   getSettings: () => settings,
-  attempts: it => resolveLive(it).attempts,
+  attempts: it => liveAttempts(it),
   onOpen: (items, i) => { mosaic.stop(); playerKind = 'live'; player.open(items, i, resolveLive, favCtl('live')); },
   info: it => esc(epgNow(it)?.title || ''),
   onVisible: items => { if (settings.epg && epg) epg.want(items.map(i => i.id)); },
@@ -128,7 +129,14 @@ function logout() {
 
 // ---------------------------------------------------------------- favorites
 
+let backups = {};   // channel id → [backup channel ids]
+let recs = [];      // saved programmes: { id, ch, title, start, end, backups }
+const saveBackups = () => store.set('bk:' + account, backups);
+const saveRecs = () => store.set('rec:' + account, recs);
+
 function loadFavs() {
+  backups = store.get('bk:' + account, {});
+  recs = store.get('rec:' + account, []);
   const raw = store.get('fav:' + account, {});
   favs = {};
   for (const t in TYPES) favs[t] = { items: new Set(raw[t]?.items), cats: new Set(raw[t]?.cats) };
@@ -452,7 +460,7 @@ async function selectTab(type) {
   renderFolders(false);
   const d = data[type];
   let f = ui.folder[type] || ALL;
-  if (f !== FAV && f !== ALL && !(d.folderById.has(f) && folderVisible(d, d.folderById.get(f)))) f = ALL;
+  if (f !== FAV && f !== ALL && f !== REC && !(d.folderById.has(f) && folderVisible(d, d.folderById.get(f)))) f = ALL;
   ui.folder[type] = f;
   refreshItems(true);
 }
@@ -470,6 +478,7 @@ function renderFolders(keepScroll = true) {
   const rows = [
     { id: FAV, name: '★ Favoritos', count: favItems.length, date: favItems[0]?.added, virtual: true },
     { id: ALL, name: 'Todo', count: all.length, date: all[0]?.added, virtual: true },
+    ...(ui.tab === 'live' ? [{ id: REC, name: '⏺ Grabaciones', count: recs.length, virtual: true }] : []),
     ...folders.filter(f => fc.has(f.id)),
     ...folders.filter(f => !fc.has(f.id)),
   ];
@@ -535,6 +544,9 @@ function refreshItems(resetScroll) {
   } else if (id === ALL) {
     list = all;
     title = 'Todo';
+  } else if (id === REC && ui.tab === 'live') {
+    list = sortedRecs();
+    title = 'Grabaciones';
   } else {
     const f = d.folderById.get(id);
     list = f ? folderItems(f) : [];
@@ -547,7 +559,7 @@ function refreshItems(resetScroll) {
   }
   $('#itemsPane').classList.toggle('poster', ui.tab !== 'live');
 
-  const useMosaic = mosaicOn && ui.tab === 'live' && !series;
+  const useMosaic = mosaicOn && ui.tab === 'live' && !series && !(id === REC && !query);
   $('#mosaicBtn').classList.toggle('on', useMosaic);
   $('#items').hidden = useMosaic || !!series;
   $('#mosaic').hidden = !useMosaic;
@@ -569,6 +581,8 @@ function refreshItems(resetScroll) {
     diag = d.diag;
   } else if (query) {
     text = p ? 'Sin resultados en las carpetas cargadas' + (p.fullLoading ? ' (el catálogo completo aún se está descargando)' : '') : 'Sin resultados';
+  } else if (id === REC) {
+    text = 'Aún no hay grabaciones. Toca ≡ en un canal para abrir su guía y pulsa ⏺ en un programa (o «Programar a mano»).';
   } else if (id === FAV) {
     text = 'Aún no hay favoritos. Pulsa ★ en cualquier elemento.' + (p ? ' Los de carpetas aún no abiertas aparecerán al cargar el catálogo.' : '');
   } else if (p && f && pending(d, f)) {
@@ -604,6 +618,7 @@ function epgNow(it) {
 }
 
 function renderItemRow(it) {
+  if (it.rec) return renderRecRow(it);
   const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL;
   const meta = [showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
   let sub = `<div class="meta">${meta}</div>`;
@@ -618,11 +633,15 @@ function renderItemRow(it) {
     <div class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
     <div class="grow"><div class="name">${esc(it.name)}</div>${sub}</div>
     ${!it.noDate && isNew(it.added) ? '<span class="badge">Nuevo</span>' : ''}
+    ${ui.tab === 'live' && it.archive ? `<span class="badge arch" title="Archivo de ${it.archive} días">⏪ ${it.archive} d</span>` : ''}
+    ${ui.tab === 'live' ? '<button class="star gbtn" data-act="guide" aria-label="Guía">≡</button>' : ''}
     <button class="star${favs[ui.tab].items.has(it.id) ? ' on' : ''}" data-act="fav" aria-label="Favorito">★</button>
   </div>`;
 }
 
 function onItemClick(it, i, act) {
+  if (it.rec) return onRecClick(it, act);
+  if (act === 'guide') return openGuide(it);
   if (act === 'fav') {
     toggle(favs[ui.tab].items, it.id);
     if ((ui.folder[ui.tab] || ALL) === FAV && !query) refreshItems(false);
@@ -651,14 +670,20 @@ function favCtl(type, fixed = null) {
   };
 }
 
-function resolveLive(it) {
+function liveAttempts(it) {
   const attempts = [];
   for (const fmt of api.liveFormats()) {
     const url = api.path('live', it.id, fmt);
     if (fmt === 'm3u8') attempts.push(['hls', url], ['native-hls', url]);
     else attempts.push(['mpegts', url]);
   }
-  return { title: it.name, live: true, attempts };
+  return attempts;
+}
+
+const liveSources = chans => chans.map(c => ({ name: c.name, attempts: () => liveAttempts(c) }));
+
+function resolveLive(it) {
+  return { title: it.name, live: true, sources: liveSources([it, ...backupsOf(it.id)]) };
 }
 
 function resolveVod(it) {
@@ -683,6 +708,8 @@ function onEpg(id) {
 }
 
 function updatePlayerEpg(it) {
+  updatePlayerButtons(it);
+  if (player.cu) return player.setInfo(player.cuInfo || '');
   const e = epg?.get(it.id);
   if (!e?.now) return player.setInfo('');
   player.setInfo(`<b>Ahora</b> ${esc(e.now.title)} <span class="dim">${hhmm(e.now.start)}–${hhmm(e.now.end)}</span>` +
@@ -690,12 +717,14 @@ function updatePlayerEpg(it) {
 }
 
 player.onchange = it => {
+  updatePlayerButtons(it);
   if (playerKind !== 'live' || !epg) return;
   epg.want([it.id], true);
   updatePlayerEpg(it);
 };
 
 player.onclose = () => {
+  updatePlayerButtons(null);
   if (mosaicOn && !$('#mosaic').hidden) mosaic.resume();
 };
 
@@ -703,6 +732,335 @@ player.onclose = () => {
 setInterval(() => {
   if (ui.tab === 'live' && settings.epg && data.live && !$('#items').hidden) { itemList.refresh(); scheduleEpg(); }
 }, 60000);
+
+// ---------------------------------------------------------------- catch-up, backups, recordings
+// Catch-up plays the provider's archive (timeshift) of a channel. A "recording" is a saved
+// programme played later from that archive, with backup channels tried in order when the
+// main one has no archive or cuts out.
+
+const liveById = id => data.live?.byId.get(String(id));
+const backupsOf = id => (backups[id] || []).map(liveById).filter(Boolean);
+const hasArchive = chans => chans.some(c => c.archive > 0);
+const archiveDays = chans => Math.max(0, ...chans.map(c => c.archive || 0));
+
+// Play programme `prog` ({title, start, end}) of channel `ch` from `pos` (default: its start).
+function playCatchup(ch, prog, pos = null, backupIds = null) {
+  const chans = [ch, ...(backupIds ? backupIds.map(liveById).filter(Boolean) : backupsOf(ch.id))];
+  const withArchive = chans.filter(c => c.archive > 0);
+  const use = withArchive.length ? withArchive : [ch];
+  const start = prog.start - PAD_START, end = prog.end + PAD_END;
+  mosaic.stop();
+  playerKind = 'live';
+  player.cuInfo = `<b>Diferido</b> ${esc(prog.title || '')} <span class="dim">${dayLabel(prog.start)} ${hhmm(prog.start)}–${hhmm(prog.end)}</span>`;
+  player.open([ch], 0, () => ({
+    title: ch.name,
+    live: true,
+    sources: use.map(c => ({ name: c.name, attempts: at => api.timeshift(c.id, at, (end - at) / 60, settings.cuShift || 0) })),
+    catchup: { start, end, pos: pos ?? start },
+    liveSources: liveSources(chans),
+  }), favCtl('live'));
+}
+
+function updatePlayerButtons(it) {
+  const live = !!it && player.isOpen && playerKind === 'live' && !!liveById(it.id);
+  const now = live && epg?.get(it.id)?.now;
+  $('#pGuide').hidden = !live;
+  $('#pBackup').hidden = !live;
+  $('#pStart').hidden = !(live && !player.cu && now && hasArchive([it, ...backupsOf(it.id)]));
+}
+
+$('#pStart').addEventListener('click', () => {
+  const it = player.current, now = epg?.get(it.id)?.now;
+  if (now) playCatchup(it, now);
+});
+$('#pGuide').addEventListener('click', () => openGuide(player.current));
+$('#pBackup').addEventListener('click', () => editBackups(player.current));
+
+const DAY = 86400;
+function dayLabel(sec) {
+  const d = new Date(sec * 1000), t = new Date();
+  const diff = Math.round((new Date(d.toDateString()) - new Date(t.toDateString())) / DAY / 1000);
+  if (diff === 0) return 'hoy';
+  if (diff === -1) return 'ayer';
+  if (diff === 1) return 'mañana';
+  return d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// ---- guide
+
+const tableCache = new Map();   // channel id → { list, ts }
+let guideCh = null;
+
+async function openGuide(ch) {
+  guideCh = ch;
+  const dlg = $('#guide');
+  $('#gTitle').textContent = ch.name;
+  const chans = [ch, ...backupsOf(ch.id)];
+  $('#gNote').textContent = hasArchive(chans)
+    ? `Archivo del proveedor: ${archiveDays(chans)} días${ch.archive ? '' : ' (en los canales de respaldo)'}. Toca un programa pasado para verlo entero.`
+    : 'Este canal no tiene archivo en tu proveedor: solo se puede ver en directo. Añade canales de respaldo con archivo para poder verlo después.';
+  $('#gBody').innerHTML = '<div class="empty-note"><span class="spinner small"></span>Cargando guía…</div>';
+  if (!dlg.open) dlg.showModal();
+  let c = tableCache.get(ch.id);
+  if (!c || Date.now() - c.ts > 10 * 60e3) {
+    try {
+      c = { list: await api.epgTable(ch.id), ts: Date.now() };
+      tableCache.set(ch.id, c);
+    } catch (ex) {
+      c = null;
+      if (guideCh === ch) $('#gBody').innerHTML = `<div class="empty-note">No se pudo cargar la guía: ${esc(ex.message)}</div>`;
+      return;
+    }
+  }
+  if (guideCh !== ch || !dlg.open) return;
+  renderGuide(ch, c.list);
+}
+
+function progAvailable(ch, p) {
+  const chans = [ch, ...backupsOf(ch.id)];
+  const days = archiveDays(chans);
+  return (p.archive || days > 0) && p.start > Date.now() / 1000 - Math.max(days, 1) * DAY;
+}
+
+function renderGuide(ch, list) {
+  const now = Date.now() / 1000;
+  const days = archiveDays([ch, ...backupsOf(ch.id)]);
+  // Past programmes only as far back as the archive goes (a few hours if there is none).
+  const from = now - (days ? days * DAY : 3 * 3600);
+  const progs = list.filter(p => p.end > from);
+  if (!progs.length) {
+    $('#gBody').innerHTML = '<div class="empty-note">Sin guía para este canal. Puedes usar «Programar a mano».</div>';
+    return;
+  }
+  let lastDay = '', html = '';
+  progs.forEach((p, i) => {
+    const day = dayLabel(p.start);
+    if (day !== lastDay) { html += `<div class="g-day">${esc(day[0].toUpperCase() + day.slice(1))}</div>`; lastDay = day; }
+    const state = p.end <= now ? 'past' : p.start <= now ? 'now' : 'future';
+    const avail = progAvailable(ch, p);
+    const saved = recs.some(r => r.ch === ch.id && r.start === p.start);
+    let btns = '', meta = '';
+    if (state === 'past') {
+      meta = avail ? 'En el archivo' : 'Sin archivo';
+      if (avail) btns = '<button data-act="play">▶ Ver</button>';
+    } else if (state === 'now') {
+      meta = `En directo · empezó hace ${Math.round((now - p.start) / 60)} min`;
+      if (avail) btns = '<button data-act="play">⏮ Desde el inicio</button>';
+    } else {
+      meta = `Dentro de ${fmtDur(p.start - now)}`;
+    }
+    if (state !== 'past') btns += `<button data-act="rec" class="${saved ? 'on' : ''}">${saved ? '✓ Guardado' : '⏺ Guardar'}</button>`;
+    html += `<div class="g-row ${state}${state === 'past' && !avail ? ' gone' : ''}" data-i="${i}">
+      <div class="g-time">${hhmm(p.start)}–${hhmm(p.end)}</div>
+      <div class="grow"><div class="name">${esc(p.title || 'Sin título')}</div><div class="meta">${esc(meta)}</div></div>
+      ${btns}</div>`;
+  });
+  const body = $('#gBody');
+  body.innerHTML = html;
+  body.onclick = e => {
+    const row = e.target.closest('.g-row');
+    if (!row) return;
+    const p = progs[+row.dataset.i];
+    const act = e.target.closest('button')?.dataset.act || (p.start <= now && progAvailable(ch, p) ? 'play' : p.end > now ? 'rec' : '');
+    if (act === 'play') {
+      $('#guide').close();
+      playCatchup(ch, p);
+    } else if (act === 'rec') {
+      const r = recs.find(r => r.ch === ch.id && r.start === p.start);
+      if (r) editRec(r);
+      else saveRec({ ch: ch.id, title: p.title, start: p.start, end: p.end, backups: backups[ch.id] || [] }, true);
+      renderGuide(ch, list);
+    }
+  };
+  const cur = body.querySelector('.g-row.now') || body.querySelector('.g-row:not(.past)');
+  if (cur) body.scrollTop = Math.max(0, cur.offsetTop - body.offsetTop - 60);
+}
+
+function fmtDur(s) {
+  const m = Math.max(1, Math.round(s / 60));
+  if (m < 60) return `${m} min`;
+  if (m < 1440) return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
+  return `${Math.round(m / 1440)} días`;
+}
+
+$('#gClose').addEventListener('click', () => $('#guide').close());
+$('#gManual').addEventListener('click', () => {
+  const start = Math.ceil(Date.now() / 1000 / 900) * 900;
+  editRec({ ch: guideCh.id, title: '', start, end: start + 2 * 3600, backups: backups[guideCh.id] || [] }, true);
+});
+$('#gBackups').addEventListener('click', () => editBackups(guideCh));
+
+// ---- recordings
+
+function saveRec(r, announce = false) {
+  r.id ||= Math.random().toString(36).slice(2);
+  recs = recs.filter(x => x.id !== r.id).concat(r);
+  saveRecs();
+  if (announce) {
+    const chans = [r.ch, ...r.backups].map(liveById).filter(Boolean);
+    toast(hasArchive(chans)
+      ? `Guardado en ⏺ Grabaciones: podrás verlo entero durante ${archiveDays(chans)} días`
+      : 'Guardado, pero ninguno de estos canales tiene archivo: solo podrás verlo en directo. Añade respaldos con ⏪.', 5000);
+  }
+  if (ui.tab === 'live' && data.live) { renderFolders(); if (ui.folder.live === REC && !query) refreshItems(false); }
+}
+
+function sortedRecs() {
+  const now = Date.now() / 1000;
+  const rank = r => r.end <= now ? 2 : r.start <= now ? 0 : 1;
+  return recs.map(r => ({ ...r, rec: true, name: r.title }))
+    .sort((a, b) => rank(a) - rank(b) || (rank(a) === 2 ? b.start - a.start : a.start - b.start));
+}
+
+function recStatus(r) {
+  const now = Date.now() / 1000;
+  const chans = [r.ch, ...r.backups].map(liveById).filter(Boolean);
+  const days = archiveDays(chans);
+  if (now < r.start) return `Programada · ${dayLabel(r.start)} ${hhmm(r.start)}–${hhmm(r.end)}`;
+  if (now < r.end) return `● En curso desde las ${hhmm(r.start)} · toca para verlo desde el principio`;
+  if (!days) return `${dayLabel(r.start)} ${hhmm(r.start)} · sin archivo en estos canales`;
+  const until = r.start + days * DAY;
+  return now < until ? `${dayLabel(r.start)} ${hhmm(r.start)} · disponible hasta ${dayLabel(until)} ${hhmm(until)}` : `${dayLabel(r.start)} · caducada (fuera del archivo)`;
+}
+
+function renderRecRow(r) {
+  const ch = liveById(r.ch);
+  const bk = r.backups.length ? ` · ${r.backups.length} de respaldo` : '';
+  return `<div class="row rec">
+    <div class="logo">⏺</div>
+    <div class="grow"><div class="name">${esc(r.title || 'Sin título')}</div>
+      <div class="meta">${esc(recStatus(r))} · ${esc(ch?.name || 'canal no disponible')}${bk}</div></div>
+    <button class="star gbtn" data-act="edit" aria-label="Editar">✎</button>
+  </div>`;
+}
+
+function onRecClick(r, act) {
+  const saved = recs.find(x => x.id === r.id);
+  if (!saved) return;
+  if (act === 'edit') return editRec(saved);
+  const ch = liveById(saved.ch);
+  if (!ch) return toast('El canal de esta grabación ya no existe');
+  if (Date.now() / 1000 < saved.start) return toast(`Empieza ${dayLabel(saved.start)} a las ${hhmm(saved.start)}. Desde ese momento podrás verlo desde el principio.`, 5000);
+  playCatchup(ch, saved, null, saved.backups);
+}
+
+// ---- recording / backup dialog
+
+let plan = null;   // { mode: 'rec' | 'backup', rec?, ch, picked: [ids] }
+
+function editRec(r, isNew = false) {
+  const ch = liveById(r.ch);
+  if (!ch) return;
+  plan = { mode: 'rec', rec: r, ch, picked: [...r.backups], isNew };
+  $('#planTitle').textContent = isNew ? `Programar en ${ch.name}` : `Grabación en ${ch.name}`;
+  $('#planHint').textContent = 'Se reproduce desde el archivo del proveedor (catch-up), incluso si llegas tarde o después de que termine.';
+  $('#planFields').hidden = false;
+  $('#planName').value = r.title || '';
+  $('#planStart').value = toLocalInput(r.start);
+  const dur = Math.round((r.end - r.start) / 60);
+  const sel = $('#planDur');
+  if (![...sel.options].some(o => +o.value === dur)) sel.add(new Option(`${dur} min`, dur));
+  sel.value = String(dur);
+  $('#planDelete').hidden = isNew;
+  openPlan();
+}
+
+function editBackups(ch) {
+  plan = { mode: 'backup', ch, picked: [...(backups[ch.id] || [])] };
+  $('#planTitle').textContent = `Respaldo de ${ch.name}`;
+  $('#planHint').textContent = 'Si el canal no carga o se corta, se pasa al siguiente de la lista (y en diferido, al mismo minuto). Usa canales que emitan lo mismo; los marcados con ⏪ tienen archivo.';
+  $('#planFields').hidden = true;
+  $('#planDelete').hidden = true;
+  openPlan();
+}
+
+function openPlan() {
+  $('#planSearch').value = '';
+  $('#planResults').innerHTML = '';
+  renderPicked();
+  $('#planDialog').returnValue = '';
+  $('#planDialog').showModal();
+}
+
+function renderPicked() {
+  $('#planChips').innerHTML = plan.picked.map((id, i) => {
+    const c = liveById(id);
+    return c ? `<button type="button" data-rm="${i}">${i + 1}. ${esc(c.name)}${c.archive ? ' ⏪' : ''} ✕</button>` : '';
+  }).join('');
+}
+
+$('#planChips').addEventListener('click', e => {
+  const b = e.target.closest('[data-rm]');
+  if (!b) return;
+  plan.picked.splice(+b.dataset.rm, 1);
+  renderPicked();
+});
+
+$('#planSearch').addEventListener('input', e => {
+  const q = norm(e.target.value.trim());
+  const res = q ? visItems(data.live).filter(c => c.key.includes(q) && c.id !== plan.ch.id && !plan.picked.includes(c.id)).slice(0, 8) : [];
+  $('#planResults').innerHTML = res.map(c => `<button type="button" data-add="${esc(c.id)}">＋ ${esc(c.name)}${c.archive ? ` <span class="dim">⏪ ${c.archive} d</span>` : ''}</button>`).join('');
+});
+
+$('#planResults').addEventListener('click', e => {
+  const b = e.target.closest('[data-add]');
+  if (!b) return;
+  plan.picked.push(b.dataset.add);
+  $('#planSearch').value = '';
+  $('#planResults').innerHTML = '';
+  renderPicked();
+  $('#planSearch').focus();
+});
+
+// Enter in the search box must not submit the dialog.
+$('#planSearch').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+
+$('#planDialog').addEventListener('close', () => {
+  const v = $('#planDialog').returnValue;
+  const p = plan;
+  plan = null;
+  if (!p || (v !== 'save' && v !== 'delete')) return;
+  if (p.mode === 'backup') {
+    backups[p.ch.id] = p.picked;
+    if (!p.picked.length) delete backups[p.ch.id];
+    saveBackups();
+    if (player.isOpen && player.current?.id === p.ch.id) {
+      player.setSources(liveSources([p.ch, ...backupsOf(p.ch.id)]));
+      updatePlayerButtons(p.ch);
+    }
+    if ($('#guide').open && guideCh?.id === p.ch.id) openGuide(p.ch);
+    toast(p.picked.length ? `${p.picked.length} canal${p.picked.length > 1 ? 'es' : ''} de respaldo guardado${p.picked.length > 1 ? 's' : ''}` : 'Sin canales de respaldo', 2500);
+    return;
+  }
+  if (v === 'delete') {
+    recs = recs.filter(x => x.id !== p.rec.id);
+    saveRecs();
+    if (ui.tab === 'live' && data.live) { renderFolders(); if (ui.folder.live === REC) refreshItems(false); }
+  } else {
+    const start = Math.floor(new Date($('#planStart').value).getTime() / 1000) || p.rec.start;
+    const end = start + +$('#planDur').value * 60;
+    saveRec({ ...p.rec, title: $('#planName').value.trim() || 'Sin título', start, end, backups: p.picked }, p.isNew);
+  }
+  if ($('#guide').open && guideCh) { const c = tableCache.get(guideCh.id); if (c) renderGuide(guideCh, c.list); }
+});
+
+function toLocalInput(sec) {
+  const d = new Date(sec * 1000);
+  const z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+}
+
+// Heads-up when a saved programme starts while the app is open.
+const announced = new Set();
+setInterval(() => {
+  const now = Date.now() / 1000;
+  for (const r of recs) {
+    if (r.start <= now && now - r.start < 120 && !announced.has(r.id)) {
+      announced.add(r.id);
+      toast(`Empieza «${r.title}». Está en ⏺ Grabaciones.`, 8000);
+    }
+  }
+}, 30000);
 
 // ---------------------------------------------------------------- mosaic
 
@@ -854,6 +1212,7 @@ $('#settingsBtn').addEventListener('click', () => {
   $('#bufferMaxInput').value = String(settings.bufferMax);
   $('#scanInput').value = String(settings.scan);
   $('#epgInput').checked = !!settings.epg;
+  $('#cuShiftInput').value = String(settings.cuShift || 0);
   $('#settings').returnValue = '';
   $('#settings').showModal();
 });
@@ -865,6 +1224,7 @@ $('#settings').addEventListener('close', async () => {
     settings.bufferMax = Math.max(settings.buffer, +$('#bufferMaxInput').value);
     settings.scan = +$('#scanInput').value;
     settings.epg = $('#epgInput').checked;
+    settings.cuShift = +$('#cuShiftInput').value;
     store.set('settings', settings);
     const proxy = $('#proxyInput').value.trim();
     if (proxy !== api.proxy) {

@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261016b">
+  <link rel="stylesheet" href="css/app.css?v=20261016c">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261016b"></script>
+  <script type="module" src="js/app.js?v=20261016c"></script>
 </head>
 <body>
 
@@ -87,12 +87,23 @@
         <div id="pTitle"></div>
         <div id="pInfo" hidden></div>
       </div>
+      <button id="pStart" class="icon txt" aria-label="Ver desde el inicio" hidden>⏮ Inicio</button>
+      <button id="pGuide" class="icon txt" aria-label="Guía" hidden>Guía</button>
+      <button id="pBackup" class="icon txt" aria-label="Canales de respaldo" hidden>Respaldo</button>
       <button id="pFav" class="icon star" aria-label="Favorito" hidden>★</button>
       <button id="pAudio" class="icon txt" aria-label="Pista de audio" hidden>Audio</button>
       <button id="pSubs" class="icon txt" aria-label="Subtítulos" hidden>CC</button>
       <button id="pPrev" class="icon" aria-label="Anterior">‹</button>
       <button id="pNext" class="icon" aria-label="Siguiente">›</button>
       <button id="pFs" class="icon" aria-label="Pantalla completa">⛶</button>
+    </div>
+    <div id="pCu" hidden>
+      <button id="cuBack" class="icon txt" aria-label="Atrás 5 minutos">« 5 min</button>
+      <span id="cuTime"></span>
+      <div id="cuTrack"><div id="cuAvail"></div><div id="cuFill"></div></div>
+      <span id="cuEnd"></span>
+      <button id="cuFwd" class="icon txt" aria-label="Adelante 5 minutos">5 min »</button>
+      <button id="cuLive" class="icon txt" hidden>Directo</button>
     </div>
     <div id="pMsg"></div>
     <button id="pRetry" class="primary" hidden>Reintentar</button>
@@ -131,6 +142,13 @@
           <option value="15">15 s</option>
         </select>
       </label>
+      <label>Ajuste de hora del diferido (si empieza antes o después de lo que debe)
+        <select id="cuShiftInput">
+          <option value="-3">−3 h</option><option value="-2">−2 h</option><option value="-1">−1 h</option>
+          <option value="0">Ninguno</option>
+          <option value="1">+1 h</option><option value="2">+2 h</option><option value="3">+3 h</option>
+        </select>
+      </label>
       <label class="check"><input id="epgInput" type="checkbox"> Mostrar guía (EPG) en la lista de canales</label>
       <button type="button" id="diagBtn">Diagnóstico de conexión</button>
       <pre id="diagOut" class="diag" hidden></pre>
@@ -143,6 +161,51 @@
         <button value="cache">Borrar caché</button>
         <button value="logout" class="danger">Cerrar sesión</button>
         <button value="close">Cerrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Channel guide (catch-up) -->
+  <dialog id="guide">
+    <div class="card wide">
+      <div class="g-head">
+        <h2 id="gTitle"></h2>
+        <button id="gClose" class="icon" aria-label="Cerrar">✕</button>
+      </div>
+      <p id="gNote" class="hint"></p>
+      <div id="gBody"></div>
+      <div class="actions">
+        <button id="gManual">⏺ Programar a mano</button>
+        <button id="gBackups">Canales de respaldo</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Recording / backup channels -->
+  <dialog id="planDialog">
+    <form method="dialog" class="card" id="planForm">
+      <h2 id="planTitle"></h2>
+      <p id="planHint" class="hint"></p>
+      <div id="planFields">
+        <label>Título <input id="planName" type="text" autocomplete="off"></label>
+        <label>Empieza <input id="planStart" type="datetime-local"></label>
+        <label>Duración
+          <select id="planDur">
+            <option value="30">30 min</option><option value="60">1 h</option><option value="90">1 h 30</option>
+            <option value="120">2 h</option><option value="150">2 h 30</option><option value="180">3 h</option><option value="240">4 h</option>
+          </select>
+        </label>
+      </div>
+      <div class="plan-bk">
+        <div class="muted">Canales de respaldo (si el principal falla o se corta)</div>
+        <div id="planChips" class="chips"></div>
+        <input id="planSearch" type="search" placeholder="Añadir canal: escribe su nombre" autocomplete="off" spellcheck="false">
+        <div id="planResults"></div>
+      </div>
+      <div class="actions">
+        <button value="save" class="primary">Guardar</button>
+        <button value="delete" id="planDelete" class="danger">Borrar</button>
+        <button value="cancel" formnovalidate>Cancelar</button>
       </div>
     </form>
   </dialog>

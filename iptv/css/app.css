@@ -235,6 +235,53 @@ body.in-series #back { display: inline-block; }
 #pMsg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80%; text-align: center; color: #ddd; pointer-events: none; }
 #pMsg:empty { display: none; }
 
+/* Catch-up bar */
+#pCu {
+  position: absolute; left: 12px; right: 12px; bottom: 72px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--radius);
+  background: rgb(0 0 0 / .6); transition: opacity .3s;
+}
+#pCu .txt { width: auto; padding: 0 14px; font-size: 16px; font-weight: 600; white-space: nowrap; }
+#pCu button { background: rgb(0 0 0 / .4); border-color: rgb(255 255 255 / .15); }
+#pCu span { font-variant-numeric: tabular-nums; font-size: 16px; }
+#cuTrack { flex: 1; position: relative; height: var(--tap); cursor: pointer; }
+#cuTrack::before, #cuAvail, #cuFill { content: ""; position: absolute; left: 0; top: 50%; height: 8px; margin-top: -4px; border-radius: 4px; }
+#cuTrack::before { right: 0; background: rgb(255 255 255 / .15); }
+#cuAvail { background: rgb(255 255 255 / .3); }
+#cuFill { background: var(--accent); }
+#cuFill::after { content: ""; position: absolute; right: -9px; top: -5px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+#player.idle #pCu { opacity: 0; pointer-events: none; }
+#cuLive { color: #ff6b6b; }
+
+/* Guide */
+.card.wide { width: min(760px, 100%); max-height: calc(100vh - 32px); }
+.g-head { display: flex; align-items: center; gap: 12px; }
+.g-head h2 { flex: 1; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#gBody { min-height: 120px; max-height: 60vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.g-day { position: sticky; top: 0; z-index: 1; padding: 8px 16px; font-size: 14px; color: var(--muted); background: var(--panel-2); border-bottom: 1px solid var(--line); }
+.g-row { min-height: 72px; display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.g-row:active { background: var(--panel-2); }
+.g-row.now { box-shadow: inset 4px 0 0 var(--accent); background: rgb(79 140 255 / .08); }
+.g-row.gone .name { color: var(--muted); }
+.g-time { flex: none; width: 112px; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 15px; }
+.g-row button { flex: none; padding: 0 14px; font-size: 16px; }
+.g-row button.on { color: var(--new); }
+#gBody .empty-note { padding: 24px; color: var(--muted); text-align: center; }
+
+/* Recording dialog */
+#planFields { display: flex; flex-direction: column; gap: 14px; }
+input[type=datetime-local] { min-height: var(--tap); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--text); font: inherit; }
+.plan-bk { display: flex; flex-direction: column; gap: 10px; }
+.plan-bk .muted { font-size: 15px; }
+#planChips:empty::before { content: "Ninguno"; color: var(--muted); font-size: 15px; }
+#planChips button { background: var(--accent); border-color: var(--accent); color: #fff; }
+#planResults { display: flex; flex-direction: column; gap: 6px; }
+#planResults button { text-align: left; }
+.badge.arch { color: var(--accent); }
+.row .gbtn { color: var(--muted); font-size: 22px; }
+.row.rec .logo { color: #ff6b6b; font-size: 22px; }
+
 /* ---------- Loading / toast ---------- */
 #loading { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: rgb(13 15 19 / .75); color: var(--muted); }
 .spinner { width: 44px; height: 44px; border: 4px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
