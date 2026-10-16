@@ -1,11 +1,11 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016d';
-import * as store from './store.js?v=20261016d';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016d';
-import { Player } from './player.js?v=20261016d';
-import { Epg, hhmm } from './epg.js?v=20261016d';
-import { Mosaic } from './mosaic.js?v=20261016d';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016e';
+import * as store from './store.js?v=20261016e';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016e';
+import { Player } from './player.js?v=20261016e';
+import { Epg, hhmm } from './epg.js?v=20261016e';
+import { Mosaic } from './mosaic.js?v=20261016e';
 
-const VERSION = '2026-10-16d';
+const VERSION = '2026-10-16e';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -293,12 +293,22 @@ async function discover(type) {
   const step = t => { progress.text = `La API no devuelve ${name}. ${t}`; };
   const ok = (src, r, x = api) => ({ cats: r.cats, items: r.items, source: src, log: log.join(' · '), server: x === api ? null : x.server });
   try {
-    step('Probando la lista completa…');
-    try {
-      const r = await api.fetchType(type);
-      log.push(`API completa: ${r.items.length}`);
-      if (r.items.length) return ok('API', r);
-    } catch (ex) { log.push(`API completa: ${ex.message}`); }
+    // The API again, past any cache and as POST: some servers answer an empty list from a cache
+    // (or while they are still building the catalog, which other apps wait for).
+    const viaApi = async (label, opt) => {
+      try {
+        const cats = await api.categories(type, opt);
+        const items = await api.streams(type, null, { timeout: 180000, retries: 0, ...opt });
+        log.push(`${label}: ${cats.length} carpetas, ${items.length} ${name}`);
+        return items.length ? ok('API', { cats, items }) : null;
+      } catch (ex) { log.push(`${label}: ${ex.message}`); return null; }
+    };
+    step('Pidiendo la mediateca sin caché…');
+    let r0 = await viaApi('API sin caché', { bust: true });
+    if (r0) return r0;
+    step('Pidiendo la mediateca por POST…');
+    r0 = await viaApi('API por POST', { post: true });
+    if (r0) return r0;
 
     for (const [t, o] of [['m3u_plus', 'ts'], ['m3u_plus', 'm3u8'], ['m3u', 'ts']]) {
       step(`Leyendo la lista M3U (${t}, ${o}); puede tardar…`);
@@ -317,6 +327,17 @@ async function discover(type) {
       log.push(`panel_api: ${r.total} canales, ${r.items.length} ${name}`);
       if (r.items.length) return ok('panel_api', r);
     } catch (ex) { log.push(`panel_api: ${ex.message}`); }
+
+    // Last: give the server time to prepare the catalog, like other apps that take a while.
+    for (const wait of [10, 30, 60]) {
+      for (let s = wait; s > 0; s--) {
+        step(`El servidor aún no la da; reintento en ${s} s…`);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      step('Reintentando…');
+      r0 = await viaApi(`API tras ${wait} s`, { bust: true });
+      if (r0) return r0;
+    }
 
     const alt = api.announcedServer();
     if (alt) {
@@ -1327,6 +1348,8 @@ $('#diagBtn').addEventListener('click', async () => {
     const first = data[t]?.partial?.cats[0] || data[t]?.folders[0];
     if (first && !String(first.id).startsWith('m3u:')) await run(`${ia} (carpeta ${first.name})`, ia, { category_id: first.id }, 90000);
     await run(`${ia} (completa)`, ia, {}, 180000);
+    lines.push(`${ia} (POST): …`); show();
+    lines[lines.length - 1] = `${ia} (POST): ${await api.probe(ia, {}, 180000, { post: true })}`; show();
   }
   await run('get.php (lista M3U)', 'm3u', { type: 'm3u_plus', output: 'ts' }, 240000);
   for (const t of ['vod', 'series']) {

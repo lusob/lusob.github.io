@@ -47,13 +47,17 @@ export class Xtream {
     return this.proxy + (this.proxy.includes('?') ? '&' : '?') + 'url=' + encodeURIComponent(url);
   }
 
-  async api(action, extra = {}, { timeout = 45000, retries = 2 } = {}) {
+  // bust: unique URL so no cache (browser, CDN in front of the panel) can answer;
+  // post: same parameters as a form POST (some panels/CDNs treat it differently).
+  async api(action, extra = {}, { timeout = 45000, retries = 2, bust = false, post = false } = {}) {
     const q = new URLSearchParams({ username: this.username, password: this.password, ...extra });
     if (action) q.set('action', action);
-    const url = this.wrap(`${this.server}/player_api.php?${q}`);
+    if (bust) q.set('_', Date.now().toString(36));
+    const url = this.wrap(post ? `${this.server}/player_api.php` : `${this.server}/player_api.php?${q}`);
+    const init = post ? { method: 'POST', body: q } : {};
     for (let n = 0; ; n++) {
       try {
-        return await this.request(url, timeout);
+        return await this.request(url, timeout, init);
       } catch (e) {
         if (!e.retry || n >= retries) throw e;
         await sleep(2000 * (n + 1));
@@ -61,13 +65,13 @@ export class Xtream {
     }
   }
 
-  async request(url, timeout) {
+  async request(url, timeout, init = {}) {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeout);
     try {
       let res;
       try {
-        res = await fetch(url, { signal: ctl.signal });
+        res = await fetch(url, { signal: ctl.signal, cache: 'no-store', ...init });
       } catch (e) {
         if (e.name === 'AbortError') throw new ApiError('El servidor no respondió a tiempo (puede estar saturado).', true);
         throw new ApiError(isMixedContent(this.server, this.proxy)
@@ -92,11 +96,11 @@ export class Xtream {
     return d;
   }
 
-  async categories(type) {
+  async categories(type, opt = {}) {
     const action = ACTIONS[type][0];
     let raw;
     try {
-      raw = toArray(await this.api(action, {}, { timeout: 45000, retries: 2 }));
+      raw = toArray(await this.api(action, {}, { timeout: 45000, retries: 2, ...opt }));
     } catch (e) {
       throw withStep(e, action);
     }
@@ -204,7 +208,7 @@ export class Xtream {
     const timer = setTimeout(() => ctl.abort(), timeout);
     try {
       let res;
-      try { res = await fetch(url, { signal: ctl.signal }); } catch (e) {
+      try { res = await fetch(url, { signal: ctl.signal, cache: 'no-store' }); } catch (e) {
         throw new ApiError(e.name === 'AbortError' ? 'El servidor no respondió a tiempo.' : 'No se pudo conectar con el servidor.', true);
       }
       if (!res.ok) throw new ApiError(`El servidor respondió HTTP ${res.status}`, res.status >= 500 || res.status === 429);
@@ -215,15 +219,17 @@ export class Xtream {
   }
 
   // Diagnostics: time, size and item count of one API call.
-  async probe(action, extra = {}, timeout = 120000) {
+  async probe(action, extra = {}, timeout = 120000, { post = false } = {}) {
     const q = new URLSearchParams({ username: this.username, password: this.password, ...extra });
     if (action && action !== 'm3u') q.set('action', action);
+    q.set('_', Date.now().toString(36));
     const page = action === 'm3u' ? 'get.php' : 'player_api.php';
     const t0 = performance.now();
     try {
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), timeout);
-      const res = await fetch(this.wrap(`${this.server}/${page}?${q}`), { signal: ctl.signal });
+      const res = await fetch(this.wrap(post ? `${this.server}/${page}` : `${this.server}/${page}?${q}`),
+        { signal: ctl.signal, cache: 'no-store', ...(post ? { method: 'POST', body: q } : {}) });
       const text = await res.text();
       clearTimeout(timer);
       const ms = Math.round(performance.now() - t0);
@@ -233,7 +239,11 @@ export class Xtream {
         const n = k => (text.match(new RegExp(`/${k}/`, 'g')) || []).length;
         count = `${n('live')} directo, ${n('movie')} pelis, ${n('series')} episodios`;
       }
-      return `HTTP ${res.status} · ${ms} ms · ${fmtBytes(text.length)} · ${count}`;
+      // Readable headers (CORS) that tell whether a cache answered, plus the start of an empty/odd body.
+      const h = ['cache-control', 'expires', 'last-modified', 'content-type'].map(k => res.headers.get(k) && `${k}: ${res.headers.get(k)}`).filter(Boolean);
+      const odd = action !== 'm3u' && (count === 0 || typeof count === 'string');
+      return `HTTP ${res.status} · ${ms} ms · ${fmtBytes(text.length)} · ${count}` +
+        (odd ? ` · respuesta: ${JSON.stringify(text.slice(0, 120))}${h.length ? ' · ' + h.join(' · ') : ''}` : '');
     } catch (e) {
       return `ERROR ${e.name === 'AbortError' ? 'tiempo agotado' : e.message} · ${Math.round(performance.now() - t0)} ms`;
     }
