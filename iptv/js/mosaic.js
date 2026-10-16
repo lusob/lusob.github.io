@@ -1,128 +1,118 @@
-// Channel mosaic for accounts with a single connection: one <video> visits the tiles of the
-// current page one by one, plays each channel for a few seconds, leaves a snapshot behind
-// and moves on. Only one stream is ever open. Tiles always fill the available space:
-// the page size follows the pane size and the grid shape follows the number of tiles.
+// Channel mosaic for accounts with a single connection: one <video> visits the tiles one by one,
+// plays each channel for a moment (1 s by default), leaves a snapshot behind and moves on.
+// Only one stream is ever open. No pages: with few channels the tiles fill the pane, with many
+// they shrink to a comfortable minimum and the grid scrolls; tiles on screen are scanned first.
+// Channels without signal can be hidden.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016c';
-import { esc, initials } from './ui.js?v=20261016c';
+import { startEngine, resetVideo } from './engines.js?v=20261016d';
+import { esc, initials } from './ui.js?v=20261016d';
 
-const LOAD_TIMEOUT = 25;   // s to get a picture before skipping the channel
-const GAP = 700;           // ms between streams so the server frees the connection
-const MIN_W = 300, MIN_H = 190;   // smallest comfortable tile (px)
+const LOAD_TIMEOUT = 20;     // s to get a picture before marking the channel as "no signal"
+const GAP = 600;             // ms between streams so the server frees the connection
+const MIN_W = 240;           // smallest tile width (px) before the grid starts scrolling
 const GAP_PX = 8;
+const RETRY_DEAD = 10 * 60e3; // re-check channels without signal after this long
 
 export class Mosaic {
-  // opt: { getSettings, attempts(item), onOpen(items, index), info(item) → html, onVisible(items), pager: {root, prev, next, label} }
+  // opt: { getSettings, attempts(item), onOpen(items, index), info(item) → html, onVisible(items), onStats({dead, total}) }
   constructor(el, opt) {
     this.el = el;
     this.opt = opt;
-    this.all = [];
     this.items = [];
-    this.page = 0;
-    this.perPage = 0;
     this.token = 0;
     this.running = false;
-    this.shots = new Map();   // item id → { canvas, at }
+    this.hideDead = false;
+    this.shots = new Map();   // item id → { canvas, at, failed, tried }
+    this.visible = new Set(); // indexes of tiles on screen
     this.video = document.createElement('video');
     this.video.muted = true;
     this.video.playsInline = true;
     this.video.className = 'm-video';
     el.addEventListener('click', e => {
       const t = e.target.closest('[data-i]');
-      if (t) this.opt.onOpen(this.all, this.page * this.perPage + +t.dataset.i);
+      if (t) this.opt.onOpen(this.items, +t.dataset.i);
     });
-    const { prev, next } = opt.pager;
-    prev.onclick = () => this.goto(this.page - 1);
-    next.onclick = () => this.goto(this.page + 1);
-    new ResizeObserver(() => {
-      if (this.el.hidden || !this.all.length) return;
-      if (this.capacity() !== this.perPage) this.render();
-      else this.fit();
-    }).observe(el);
+    new ResizeObserver(() => { if (!this.el.hidden) this.fit(); }).observe(el);
+    this.io = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        const i = +e.target.dataset.i;
+        if (e.isIntersecting) this.visible.add(i); else this.visible.delete(i);
+      }
+      clearTimeout(this.visTimer);
+      this.visTimer = setTimeout(() => this.opt.onVisible?.([...this.visible].map(i => this.items[i]).filter(Boolean)), 300);
+    }, { root: el });
     this.ageTimer = setInterval(() => this.stamp(), 30000);
   }
 
   show(items) {
-    this.all = items;
-    this.page = 0;
-    this.render();
-  }
-
-  hide() {
     this.stop();
-    this.opt.pager.root.hidden = true;
-  }
-
-  // How many tiles fit in the pane.
-  capacity() {
-    const w = this.el.clientWidth - GAP_PX * 2, h = this.el.clientHeight - GAP_PX * 2;
-    if (w <= 0 || h <= 0) return 12;
-    return Math.max(1, Math.floor((w + GAP_PX) / (MIN_W + GAP_PX)) * Math.floor((h + GAP_PX) / (MIN_H + GAP_PX)));
-  }
-
-  goto(p) {
-    const pages = Math.ceil(this.all.length / this.perPage);
-    if (p < 0 || p >= pages) return;
-    this.page = p;
-    this.render(false);
-  }
-
-  render(recompute = true) {
-    const wasRunning = this.running || recompute;
-    this.stop();
-    if (recompute || !this.perPage) {
-      const first = this.page * this.perPage;
-      this.perPage = this.capacity();
-      this.page = Math.floor(first / this.perPage) || 0;
-    }
-    const pages = Math.max(1, Math.ceil(this.all.length / this.perPage));
-    this.page = Math.min(this.page, pages - 1);
-    this.items = this.all.slice(this.page * this.perPage, (this.page + 1) * this.perPage);
-    const { root, prev, next, label } = this.opt.pager;
-    root.hidden = pages < 2;
-    label.textContent = `${this.page + 1}/${pages}`;
-    prev.disabled = this.page === 0;
-    next.disabled = this.page >= pages - 1;
-
-    this.el.innerHTML = `<div class="m-grid">${this.items.map((it, i) => `
+    this.items = items;
+    this.visible.clear();
+    this.io.disconnect();
+    this.el.scrollTop = 0;
+    this.el.innerHTML = `<div class="m-grid${this.hideDead ? ' hide-dead' : ''}">${items.map((it, i) => `
       <div class="tile" data-i="${i}">
         <div class="m-screen"><span class="m-ph">${initials(it.name)}</span></div>
         <div class="m-label"><div class="name">${esc(it.name)}</div><div class="meta m-info"></div></div>
         <span class="m-state"></span>
       </div>`).join('')}</div>`;
-    this.items.forEach((it, i) => {
+    this.grid = this.el.firstElementChild;
+    items.forEach((it, i) => {
+      const t = this.tile(i);
+      this.io.observe(t);
       const shot = this.shots.get(it.id);
-      if (shot?.at) {
-        const t = this.tile(i);
-        t.querySelector('.m-screen').appendChild(shot.canvas);
-        t.classList.add('shot');
-      }
+      if (shot?.at) { t.querySelector('.m-screen').appendChild(shot.canvas); t.classList.add('shot'); }
+      if (shot?.failed && !shot.at) t.classList.add('dead');
     });
     this.fit();
     this.stamp();
     this.refreshInfo();
-    this.opt.onVisible?.(this.items);
-    if (wasRunning) this.resume();
+    this.stats();
+    this.resume();
   }
 
-  // Grid shape that makes n tiles as large as possible in the pane (16:9 pictures).
+  hide() {
+    this.stop();
+  }
+
+  setHideDead(on) {
+    this.hideDead = on;
+    this.grid?.classList.toggle('hide-dead', on);
+    this.fit();
+  }
+
+  // Few tiles: the grid shape that makes them as large as possible (16:9) and fills the pane.
+  // Many tiles: as many columns of at least MIN_W as fit, 16:9 rows, vertical scroll.
   fit() {
-    const grid = this.el.querySelector('.m-grid');
-    const n = this.items.length;
-    if (!grid || !n) return;
+    const grid = this.grid;
+    if (!grid) return;
+    const n = this.hideDead ? grid.querySelectorAll('.tile:not(.dead)').length : this.items.length;
     const w = this.el.clientWidth - GAP_PX * 2, h = this.el.clientHeight - GAP_PX * 2;
-    let best = { c: 1, score: -1 };
+    if (!n || w <= 0 || h <= 0) return;
+    let best = { c: 1, r: n, score: -1, tw: 0 };
     for (let c = 1; c <= n; c++) {
       const r = Math.ceil(n / c);
       const tw = (w - GAP_PX * (c - 1)) / c, th = (h - GAP_PX * (r - 1)) / r;
-      const score = Math.min(tw, th * 16 / 9) - (r * c - n) * 0.5;   // big pictures, few empty cells
-      if (score > best.score) best = { c, r, score };
+      const size = Math.min(tw, th * 16 / 9);
+      const score = size - (r * c - n) * 0.5;   // big pictures, few empty cells
+      if (score > best.score) best = { c, r, score, tw: size };
     }
-    grid.style.gridTemplateColumns = `repeat(${best.c}, 1fr)`;
-    grid.style.gridTemplateRows = `repeat(${best.r}, 1fr)`;
+    if (best.tw >= MIN_W) {
+      grid.classList.remove('scroll');
+      grid.style.gridTemplateColumns = `repeat(${best.c}, 1fr)`;
+      grid.style.gridTemplateRows = `repeat(${best.r}, 1fr)`;
+      grid.style.gridAutoRows = '';
+    } else {
+      const c = Math.max(1, Math.floor((w + GAP_PX) / (MIN_W + GAP_PX)));
+      const tw = (w - GAP_PX * (c - 1)) / c;
+      grid.classList.add('scroll');
+      grid.style.gridTemplateColumns = `repeat(${c}, 1fr)`;
+      grid.style.gridTemplateRows = '';
+      grid.style.gridAutoRows = `${Math.round(tw * 9 / 16)}px`;
+    }
   }
 
-  tile(i) { return this.el.querySelector(`.tile[data-i="${i}"]`); }
+  tile(i) { return this.grid?.children[i]; }
 
   refreshInfo(item) {
     this.items.forEach((it, i) => {
@@ -130,6 +120,12 @@ export class Mosaic {
       const el = this.tile(i)?.querySelector('.m-info');
       if (el) el.innerHTML = this.opt.info(it);
     });
+  }
+
+  stats() {
+    let dead = 0;
+    for (const it of this.items) { const s = this.shots.get(it.id); if (s?.failed && !s.at) dead++; }
+    this.opt.onStats?.({ dead, total: this.items.length });
   }
 
   resume() {
@@ -155,13 +151,25 @@ export class Mosaic {
     this.el.querySelector('.tile.scanning')?.classList.remove('scanning');
   }
 
-  // Next tile after the current one, preferring tiles never captured.
+  // Next tile: on-screen tiles never captured, then off-screen ones never tried (in order),
+  // then the on-screen capture that is oldest; dead channels are re-checked now and then.
   pick() {
-    if (!this.items.length) return null;
-    const fresh = this.items.findIndex(it => !this.shots.has(it.id));
-    if (fresh >= 0) return fresh;
-    const after = (this.last ?? -1) + 1;
-    return after < this.items.length ? after : 0;
+    const n = this.items.length;
+    if (!n) return null;
+    const now = Date.now();
+    const shown = i => !(this.hideDead && this.tile(i)?.classList.contains('dead'));
+    const fresh = i => !this.shots.has(this.items[i].id);
+    const vis = [...this.visible].filter(i => i < n).sort((a, b) => a - b);
+    const first = vis.find(i => fresh(i));
+    if (first != null) return first;
+    for (let k = 0; k < n; k++) if (fresh(k)) return k;
+    let best = null, bestAt = Infinity;
+    for (const k of vis.length ? vis : [...Array(n).keys()]) {
+      const s = this.shots.get(this.items[k].id);
+      const at = s.at || (now - s.tried > RETRY_DEAD ? s.tried : Infinity);
+      if (shown(k) && at < bestAt) { best = k; bestAt = at; }
+    }
+    return best;
   }
 
   next() {
@@ -170,8 +178,12 @@ export class Mosaic {
     this.release();
     this.cur = null;
     const i = this.pick();
-    if (i == null) return;
     const tok = ++this.token;
+    if (i == null) {
+      // Nothing to do right now (e.g. every channel on screen is dead and hidden): look again later.
+      this.timer = setTimeout(() => { if (tok === this.token) this.next(); }, 5000);
+      return;
+    }
     this.cur = i;
     this.timer = setTimeout(() => { if (tok === this.token) this.scan(i, tok, 0); }, prev == null ? 0 : GAP);
   }
@@ -203,7 +215,7 @@ export class Mosaic {
       v.removeEventListener('timeupdate', onFrame);
       t.querySelector('.m-state').textContent = '● En directo';
       clearTimeout(this.timer);
-      const dwell = Math.max(3, +this.opt.getSettings().scan || 6);
+      const dwell = Math.max(1, +this.opt.getSettings().scan || 1);
       this.timer = setTimeout(() => { if (tok === this.token) this.done(i, true); }, dwell * 1000);
     };
     v.addEventListener('timeupdate', onFrame);
@@ -212,35 +224,40 @@ export class Mosaic {
   done(i, ok) {
     const t = this.tile(i);
     const item = this.items[i];
+    const shot = this.shots.get(item.id) || { canvas: document.createElement('canvas'), at: 0 };
+    this.shots.set(item.id, shot);
+    shot.tried = Date.now();
     if (t) {
       const v = this.video;
       if (ok && v.videoWidth) {
-        const shot = this.shots.get(item.id) || { canvas: document.createElement('canvas') };
-        this.shots.set(item.id, shot);
         const screen = t.querySelector('.m-screen');
         if (shot.canvas.parentNode !== screen) screen.appendChild(shot.canvas);
-        shot.failed = false;
         const c = shot.canvas;
         c.width = 480;
         c.height = Math.round(480 * v.videoHeight / v.videoWidth) || 270;
         c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
         shot.at = Date.now();
+        shot.failed = false;
         t.classList.add('shot');
-      } else if (!this.shots.has(item.id)) {
-        this.shots.set(item.id, { canvas: document.createElement('canvas'), at: 0, failed: true });
+      } else if (!ok) {
+        shot.failed = true;
+        shot.at = 0;
+        shot.canvas.remove();
+        t.classList.remove('shot');
       }
-      const shot = this.shots.get(item.id);
-      t.classList.toggle('nosignal', !!shot?.failed && !shot.at);
+      const wasDead = t.classList.contains('dead');
+      t.classList.toggle('dead', !!shot.failed && !shot.at);
       t.classList.remove('scanning');
+      if (wasDead !== t.classList.contains('dead')) { if (this.hideDead) this.fit(); this.stats(); }
     }
-    this.last = i;
-    this.stamp();
+    this.stamp(i);
     this.next();
   }
 
   // Age label on each tile ("hace 2 min" / "Sin señal").
-  stamp() {
+  stamp(only = null) {
     this.items.forEach((it, i) => {
+      if (only != null && i !== only) return;
       const t = this.tile(i);
       if (!t || t.classList.contains('scanning')) return;
       const shot = this.shots.get(it.id);

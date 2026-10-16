@@ -1,11 +1,11 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016c';
-import * as store from './store.js?v=20261016c';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016c';
-import { Player } from './player.js?v=20261016c';
-import { Epg, hhmm } from './epg.js?v=20261016c';
-import { Mosaic } from './mosaic.js?v=20261016c';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016d';
+import * as store from './store.js?v=20261016d';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016d';
+import { Player } from './player.js?v=20261016d';
+import { Epg, hhmm } from './epg.js?v=20261016d';
+import { Mosaic } from './mosaic.js?v=20261016d';
 
-const VERSION = '2026-10-16c';
+const VERSION = '2026-10-16d';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -26,7 +26,9 @@ let mosaicOn = false;
 let playerKind = '';           // 'live' | 'vod' | 'series'
 const seriesCache = new Map();
 const ui = Object.assign({ tab: 'live', folder: {} }, store.get('ui', {}));
-const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 6, epg: true, cuShift: 0 }, store.get('settings', {}));
+const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 1, epg: true, cuShift: 0 }, store.get('settings', {}));
+if (!settings.v2) { settings.scan = 1; settings.v2 = true; }   // mosaic now captures after 1 s by default
+ui.hideDead ??= false;
 
 const player = new Player($('#player'), () => settings);
 const folderList = new VList($('#folders'), 64, renderFolderRow, onFolderClick);
@@ -38,7 +40,7 @@ const mosaic = new Mosaic($('#mosaic'), {
   onOpen: (items, i) => { mosaic.stop(); playerKind = 'live'; player.open(items, i, resolveLive, favCtl('live')); },
   info: it => esc(epgNow(it)?.title || ''),
   onVisible: items => { if (settings.epg && epg) epg.want(items.map(i => i.id)); },
-  pager: { root: $('#mosaicPager'), prev: $('#mPrev'), next: $('#mNext'), label: $('#mPage') },
+  onStats: ({ dead }) => { $('#deadCount').textContent = dead ? ` (${dead})` : ''; },
 });
 
 const saveUi = () => store.set('ui', ui);
@@ -281,6 +283,65 @@ async function loadData(type, force) {
   return data[type];
 }
 
+// The API gave no folders: look for the section elsewhere, logging every try (shown on screen).
+// Order: full API list, M3U playlist variants, the old panel_api.php, the host from server_info.
+async function discover(type) {
+  const name = TYPES[type].toLowerCase();
+  const log = ['API: 0 carpetas'];
+  const progress = { text: '' };
+  const stop = paneLoading(type, progress);
+  const step = t => { progress.text = `La API no devuelve ${name}. ${t}`; };
+  const ok = (src, r, x = api) => ({ cats: r.cats, items: r.items, source: src, log: log.join(' · '), server: x === api ? null : x.server });
+  try {
+    step('Probando la lista completa…');
+    try {
+      const r = await api.fetchType(type);
+      log.push(`API completa: ${r.items.length}`);
+      if (r.items.length) return ok('API', r);
+    } catch (ex) { log.push(`API completa: ${ex.message}`); }
+
+    for (const [t, o] of [['m3u_plus', 'ts'], ['m3u_plus', 'm3u8'], ['m3u', 'ts']]) {
+      step(`Leyendo la lista M3U (${t}, ${o}); puede tardar…`);
+      try {
+        const m = await api.m3u(t, o);
+        log.push(`M3U ${t}/${o}: ${fmtSize(m.bytes)}, ${m.live} directo, ${m.vod.items.length} pelis, ${m.series.items.length} series`);
+        if (m[type].items.length) return ok('M3U', m[type]);
+        if (!m.live && !m.vod.items.length) continue;
+        break;   // a valid playlist without this section: other variants won't have it either
+      } catch (ex) { log.push(`M3U ${t}/${o}: ${ex.message}`); }
+    }
+
+    step('Probando panel_api.php…');
+    try {
+      const r = await api.panelStreams(type);
+      log.push(`panel_api: ${r.total} canales, ${r.items.length} ${name}`);
+      if (r.items.length) return ok('panel_api', r);
+    } catch (ex) { log.push(`panel_api: ${ex.message}`); }
+
+    const alt = api.announcedServer();
+    if (alt) {
+      step(`Probando el servidor anunciado ${alt}…`);
+      const x = api.withServer(alt);
+      try {
+        const r = await x.fetchType(type);
+        log.push(`${alt}: ${r.items.length} ${name}`);
+        if (r.items.length) return ok(alt, r, x);
+      } catch (ex) { log.push(`${alt}: ${ex.message}`); }
+    }
+  } finally {
+    stop();
+  }
+  const err = new Error(`Tu servidor no devuelve ${name} a esta app por ninguna vía`);
+  err.detail = log.join(' · ');
+  throw err;
+}
+
+const fmtSize = n => !n ? '0 KB' : n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' KB';
+
+// Section served by another host (found by discover()): use it for its requests and URLs.
+const apiFor = type => data[type]?.server ? (altApis[data[type].server] ||= api.withServer(data[type].server)) : api;
+const altApis = {};
+
 // Movies / series: catalogs can be huge, so (like IPTVnator) the folders come first and each
 // folder is loaded when opened; the full catalog (needed for "newest first" across folders)
 // downloads in the background and replaces the partial view when it arrives.
@@ -295,31 +356,13 @@ async function loadLazy(type, key, stale) {
   try {
     const cats = await api.categories(type);
     if (!cats.length) {
-      // No categories: try the full list, then the M3U playlist (some panels only list
-      // movies/series there).
-      let fresh = null, apiNote = 'la API no devuelve carpetas';
-      try {
-        fresh = await api.fetchType(type);
-        if (!fresh.items.length) fresh = null;
-      } catch (ex) { apiNote = ex.message; }
-      if (!fresh) {
-        stop();
-        const stopM3u = paneLoading(type, { text: `La API no devuelve ${TYPES[type].toLowerCase()}; leyendo la lista M3U (puede tardar)…` });
-        try {
-          const m = await api.m3u();
-          if (!m[type].items.length) {
-            const err = new Error(`El servidor no ofrece ${TYPES[type].toLowerCase()} ni por la API ni en la lista M3U`);
-            err.detail = `${apiNote}; M3U: ${m.vod.items.length} pelis, ${m.series.items.length} series`;
-            throw err;
-          }
-          fresh = { ...m[type], m3u: true };
-        } finally {
-          stopM3u();
-        }
-      }
-      fresh.ts = Date.now();
-      store.cachePut(key, fresh);
-      return (data[type] = build(fresh));
+      stop();
+      const found = await discover(type);
+      found.ts = Date.now();
+      store.cachePut(key, found);
+      data[type] = build(found);
+      data[type].diag = found.log;
+      return data[type];
     }
     const partial = { cats, byId: new Map(), loaded: new Set(), loading: new Set(), errors: new Map(), fullLoading: true, fullError: '' };
     data[type] = build({ cats, items: [] }, partial);
@@ -400,7 +443,8 @@ function paneLoading(type, progress) {
 }
 
 // Folders and items newest first; a folder is as recent as its newest item.
-function build({ cats, items }, partial = null) {
+function build(src, partial = null) {
+  let { cats, items } = src;
   items = items.slice().sort((a, b) => b.added - a.added);
   const folderById = new Map(cats.map(c => [c.id, { id: c.id, name: c.name, items: [], adult: isAdultName(c.name) }]));
   const byId = new Map();
@@ -428,7 +472,7 @@ function build({ cats, items }, partial = null) {
   }
   const safeItems = items.filter(i => !i.hide);
   const hasAdult = items.length !== safeItems.length || folders.some(f => f.adult);
-  return { items, safeItems, folders, folderById, byId, hasAdult, partial, noDate: items.some(i => i.noDate) };
+  return { items, safeItems, folders, folderById, byId, hasAdult, partial, anyArchive: items.some(i => i.archive > 0), noDate: items.some(i => i.noDate), server: src.server || null };
 }
 
 const visItems = d => unlocked ? d.items : d.safeItems;
@@ -478,7 +522,7 @@ function renderFolders(keepScroll = true) {
   const rows = [
     { id: FAV, name: '★ Favoritos', count: favItems.length, date: favItems[0]?.added, virtual: true },
     { id: ALL, name: 'Todo', count: all.length, date: all[0]?.added, virtual: true },
-    ...(ui.tab === 'live' ? [{ id: REC, name: '⏺ Grabaciones', count: recs.length, virtual: true }] : []),
+    ...(ui.tab === 'live' && (d.anyArchive || recs.length) ? [{ id: REC, name: '⏺ Grabaciones', count: recs.length, virtual: true }] : []),
     ...folders.filter(f => fc.has(f.id)),
     ...folders.filter(f => !fc.has(f.id)),
   ];
@@ -561,6 +605,7 @@ function refreshItems(resetScroll) {
 
   const useMosaic = mosaicOn && ui.tab === 'live' && !series && !(id === REC && !query);
   $('#mosaicBtn').classList.toggle('on', useMosaic);
+  $('#deadBtn').hidden = !useMosaic;
   $('#items').hidden = useMosaic || !!series;
   $('#mosaic').hidden = !useMosaic;
   if (useMosaic) {
@@ -687,7 +732,7 @@ function resolveLive(it) {
 }
 
 function resolveVod(it) {
-  const url = it.url ? api.wrap(it.url) : api.path('movie', it.id, it.ext);
+  const url = it.url ? api.wrap(it.url) : apiFor('vod').path('movie', it.id, it.ext);
   return { title: it.name, attempts: it.ext === 'm3u8' ? [['hls', url], ['native-hls', url]] : [['native', url]] };
 }
 
@@ -796,9 +841,11 @@ async function openGuide(ch) {
   const dlg = $('#guide');
   $('#gTitle').textContent = ch.name;
   const chans = [ch, ...backupsOf(ch.id)];
+  $('#gManual').hidden = !data.live?.anyArchive;
   $('#gNote').textContent = hasArchive(chans)
     ? `Archivo del proveedor: ${archiveDays(chans)} días${ch.archive ? '' : ' (en los canales de respaldo)'}. Toca un programa pasado para verlo entero.`
-    : 'Este canal no tiene archivo en tu proveedor: solo se puede ver en directo. Añade canales de respaldo con archivo para poder verlo después.';
+    : data.live?.anyArchive ? 'Este canal no tiene archivo en tu proveedor: solo se puede ver en directo. Añade canales de respaldo con archivo para poder verlo después.'
+    : 'Tu proveedor no ofrece archivo (catch-up): la guía es informativa. Los canales de respaldo sí funcionan en directo.';
   $('#gBody').innerHTML = '<div class="empty-note"><span class="spinner small"></span>Cargando guía…</div>';
   if (!dlg.open) dlg.showModal();
   let c = tableCache.get(ch.id);
@@ -849,7 +896,7 @@ function renderGuide(ch, list) {
     } else {
       meta = `Dentro de ${fmtDur(p.start - now)}`;
     }
-    if (state !== 'past') btns += `<button data-act="rec" class="${saved ? 'on' : ''}">${saved ? '✓ Guardado' : '⏺ Guardar'}</button>`;
+    if (state !== 'past' && hasArchive([ch, ...backupsOf(ch.id)])) btns += `<button data-act="rec" class="${saved ? 'on' : ''}">${saved ? '✓ Guardado' : '⏺ Guardar'}</button>`;
     html += `<div class="g-row ${state}${state === 'past' && !avail ? ' gone' : ''}" data-i="${i}">
       <div class="g-time">${hhmm(p.start)}–${hhmm(p.end)}</div>
       <div class="grow"><div class="name">${esc(p.title || 'Sin título')}</div><div class="meta">${esc(meta)}</div></div>
@@ -1064,6 +1111,15 @@ setInterval(() => {
 
 // ---------------------------------------------------------------- mosaic
 
+mosaic.hideDead = ui.hideDead;
+$('#deadBtn').classList.toggle('on', ui.hideDead);
+$('#deadBtn').addEventListener('click', () => {
+  ui.hideDead = !ui.hideDead;
+  saveUi();
+  $('#deadBtn').classList.toggle('on', ui.hideDead);
+  mosaic.setHideDead(ui.hideDead);
+});
+
 $('#mosaicBtn').addEventListener('click', () => {
   mosaicOn = !mosaicOn;
   closeSeries();
@@ -1090,7 +1146,7 @@ async function openSeries(it) {
   box.innerHTML = '<p class="muted"><span class="spinner small"></span>Cargando episodios…</p>';
   try {
     let info = it.episodes ? { info: {}, episodes: it.episodes } : seriesCache.get(it.id);   // M3U series carry their episodes
-    if (!info) { info = await api.seriesInfo(it.id); seriesCache.set(it.id, info); }
+    if (!info) { info = await apiFor('series').seriesInfo(it.id); seriesCache.set(it.id, info); }
     if (series?.item !== it) return;
     let eps = info?.episodes || {};
     if (Array.isArray(eps)) eps = Object.fromEntries(eps.map((e, i) => [String(e?.[0]?.season ?? i + 1), e]));
@@ -1133,7 +1189,7 @@ $('#series').addEventListener('click', e => {
   const fav = favCtl('series', series.item);
   player.open(eps, +ep.dataset.ep, x => {
     const ext = x.container_extension || 'mp4';
-    const url = x.url ? api.wrap(x.url) : api.path('series', x.id, ext);
+    const url = x.url ? api.wrap(x.url) : apiFor('series').path('series', x.id, ext);
     return {
       title: `${name} · T${season}E${x.episode_num ?? ''} ${x.title && !x.title.includes(name) ? x.title : ''}`.trim(),
       attempts: ext === 'm3u8' ? [['hls', url], ['native-hls', url]] : [['native', url]],

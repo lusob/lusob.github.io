@@ -146,11 +146,13 @@ export class Xtream {
 
   // Fallback for panels whose API returns no movies/series: the M3U playlist (get.php), which
   // apps like IPTVnator read. Downloaded once per session and shared by both sections.
-  m3u() {
-    if (this.m3uPromise) return this.m3uPromise;
-    const q = new URLSearchParams({ username: this.username, password: this.password, type: 'm3u_plus', output: 'ts' });
+  m3u(type = 'm3u_plus', output = 'ts') {
+    this.m3uCache ||= new Map();
+    const k = type + '|' + output;
+    if (this.m3uCache.has(k)) return this.m3uCache.get(k);
+    const q = new URLSearchParams({ username: this.username, password: this.password, type, output });
     const url = this.wrap(`${this.server}/get.php?${q}`);
-    this.m3uPromise = (async () => {
+    const promise = (async () => {
       let text;
       for (let n = 0; ; n++) {
         try { text = await this.requestText(url, 240000); break; } catch (e) {
@@ -158,10 +160,43 @@ export class Xtream {
           await sleep(3000);
         }
       }
-      return parseM3u(text);
+      const r = parseM3u(text);
+      r.bytes = text.length;
+      return r;
     })();
-    this.m3uPromise.catch(() => { this.m3uPromise = null; });
-    return this.m3uPromise;
+    this.m3uCache.set(k, promise);
+    promise.catch(() => this.m3uCache.delete(k));
+    return promise;
+  }
+
+  // Old Xtream API: every stream of the account (live, movies and sometimes series) in one call.
+  async panelStreams(type) {
+    const q = new URLSearchParams({ username: this.username, password: this.password });
+    const d = await this.request(this.wrap(`${this.server}/panel_api.php?${q}`), 180000);
+    const all = toArray(d?.available_channels) || [];
+    const want = type === 'vod' ? /^movie$/i : /^series$/i;
+    const list = all.filter(s => s && want.test(String(s.stream_type || '')));
+    const cats = new Map();
+    for (const s of list) cats.set(String(s.category_id ?? ''), { id: String(s.category_id ?? ''), name: String(s.category_name || 'Sin categoría') });
+    return { cats: [...cats.values()], items: dedupe(type, list, null), total: all.length };
+  }
+
+  // Same account on another host (e.g. the address announced in server_info).
+  withServer(server) {
+    const x = new Xtream({ server, username: this.username, password: this.password, proxy: this.proxy });
+    x.info = this.info;
+    return x;
+  }
+
+  // The host the panel says it serves from, when it differs from the one typed in.
+  announcedServer() {
+    const si = this.info?.server_info;
+    if (!si?.url) return null;
+    const proto = (si.server_protocol || location.protocol.replace(':', '')).toLowerCase() === 'https' ? 'https' : 'http';
+    const port = proto === 'https' ? si.https_port : si.port;
+    const def = proto === 'https' ? '443' : '80';
+    const server = `${proto}://${si.url}${port && String(port) !== def ? ':' + port : ''}`;
+    return server.replace(/\/+$/, '') === this.server.replace(/\/+$/, '') ? null : server;
   }
 
   async requestText(url, timeout) {
@@ -272,7 +307,7 @@ function toArray(x) {
 export function parseM3u(text) {
   const out = { vod: { cats: new Map(), items: [] }, series: { cats: new Map(), items: new Map() } };
   const lines = text.split(/\r?\n/);
-  let inf = null, order = 0;
+  let inf = null, order = 0, live = 0;
   for (const raw of lines) {
     const line = raw.trim();
     if (line.startsWith('#EXTINF')) { inf = line; continue; }
@@ -283,7 +318,7 @@ export function parseM3u(text) {
     const name = (attrs['tvg-name'] || inf.slice(inf.lastIndexOf(',') + 1)).trim() || inf.slice(inf.lastIndexOf(',') + 1).trim();
     const group = attrs['group-title'] || 'Sin categoría';
     inf = null;
-    if (!m) continue;
+    if (!m) { live++; continue; }
     const kind = m[1].toLowerCase() === 'movie' ? 'vod' : 'series';
     const sec = out[kind];
     const catId = 'm3u:' + group;
@@ -314,6 +349,7 @@ export function parseM3u(text) {
     for (const k in it.episodes) it.episodes[k].sort((a, b) => a.episode_num - b.episode_num);
   }
   return {
+    live,
     vod: { cats: [...out.vod.cats.values()], items: merge(out.vod.items) },
     series: { cats: [...out.series.cats.values()], items: [...out.series.items.values()] },
   };

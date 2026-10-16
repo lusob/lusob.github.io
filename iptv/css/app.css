@@ -132,8 +132,12 @@ body.in-series #back { display: inline-block; }
 .bar i { display: block; height: 100%; background: var(--accent); }
 
 /* ---------- Mosaic ---------- */
-#mosaic { flex: 1; min-height: 0; overflow: hidden; padding: 8px; }
+#mosaic { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px; }
 .m-grid { height: 100%; display: grid; gap: 8px; }
+.m-grid.scroll { height: auto; }
+.m-grid.hide-dead .tile.dead { display: none; }
+#deadBtn { width: auto; padding: 0 14px; font-size: 16px; white-space: nowrap; }
+#deadBtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tile { position: relative; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: #000; cursor: pointer; }
 .tile:active { filter: brightness(1.2); }
 .tile.scanning { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
@@ -147,8 +151,6 @@ body.in-series #back { display: inline-block; }
 .m-state { position: absolute; z-index: 2; top: 8px; left: 8px; padding: 2px 8px; border-radius: 6px; font-size: 12px; background: rgb(0 0 0 / .65); color: #ddd; }
 .m-state:empty { display: none; }
 .tile.scanning .m-state { color: #ff6b6b; }
-#mosaicPager { display: flex; align-items: center; gap: 8px; }
-#mosaicPager .icon { width: 48px; min-height: 48px; }
 
 /* ---------- Virtual list ---------- */
 .vlist { position: relative; overflow-y: auto; overscroll-behavior: contain; height: 100%; }

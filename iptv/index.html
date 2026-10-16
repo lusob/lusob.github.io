@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261016c">
+  <link rel="stylesheet" href="css/app.css?v=20261016d">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261016c"></script>
+  <script type="module" src="js/app.js?v=20261016d"></script>
 </head>
 <body>
 
@@ -59,11 +59,7 @@
           <h2 id="listTitle"></h2>
           <span id="listCount" class="muted"></span>
           <span class="spacer"></span>
-          <span id="mosaicPager" hidden>
-            <button id="mPrev" class="icon" aria-label="Página anterior">‹</button>
-            <span id="mPage" class="muted"></span>
-            <button id="mNext" class="icon" aria-label="Página siguiente">›</button>
-          </span>
+          <button id="deadBtn" class="icon txt" hidden>Ocultar sin señal<span id="deadCount"></span></button>
           <button id="mosaicBtn" class="icon" title="Mosaico" aria-label="Mosaico" hidden>▦</button>
         </div>
         <div id="items"></div>
@@ -134,12 +130,12 @@
           <option value="120">120 s</option>
         </select>
       </label>
-      <label>Mosaico: segundos por canal
+      <label>Mosaico: segundos en cada canal antes de capturar
         <select id="scanInput">
+          <option value="1">1 s (más rápido)</option>
+          <option value="2">2 s</option>
           <option value="4">4 s</option>
           <option value="6">6 s</option>
-          <option value="10">10 s</option>
-          <option value="15">15 s</option>
         </select>
       </label>
       <label>Ajuste de hora del diferido (si empieza antes o después de lo que debe)
