@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016i';
+import { startEngine, resetVideo } from './engines.js?v=20261016j';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
@@ -160,7 +160,8 @@ export class Player {
     this.prevBtn.disabled = this.index <= 0;
     this.nextBtn.disabled = this.index >= this.queue.length - 1;
     this.live = !!r.live;
-    this.fromStart = !!r.fromStart;   // e.g. a recording still in progress: start at its beginning
+    this.fromStart = !!r.fromStart;
+    this.texts = r.texts || null;     // wording for something that is not a channel (e.g. a recording)   // e.g. a recording still in progress: start at its beginning
     this.sources = r.sources || [{ name: r.title, attempts: () => r.attempts }];
     this.liveSources = r.liveSources || null;
     this.cu = r.catchup ? { start: r.catchup.start, end: r.catchup.end, base: r.catchup.pos ?? r.catchup.start } : null;
@@ -177,7 +178,7 @@ export class Player {
     if (this.cu && this.cu.base > Date.now() / 1000 - LIVE_EDGE) return this.goLive('');
     this.prepare();
     this.onchange?.(this.current);
-    this.attempt(0, this.cu ? 'Cargando diferido…' : 'Conectando…');
+    this.attempt(0, this.cu ? 'Cargando diferido…' : this.texts?.loading || 'Conectando…');
   }
 
   resetCounters() {
@@ -409,7 +410,7 @@ export class Player {
       // Was playing: reconnect with the same engine (catch-up: from where it stopped).
       const budget = multi ? BACKUP_RECONNECTS : MAX_RECONNECTS;
       if (++this.reconnects > budget) {
-        return this.nextSource('Se ha cortado la señal.') || this.giveUp('Se ha perdido la conexión con el canal.');
+        return this.nextSource('Se ha cortado la señal.') || this.giveUp(this.texts?.fail || 'Se ha perdido la conexión con el canal.');
       }
       if (this.cu) {
         this.cu.base = this.cuPos();
@@ -429,15 +430,15 @@ export class Player {
         if (++this.round >= rounds) {
           if (this.nextSource(this.cu ? 'Sin archivo en este canal.' : 'Sin señal.')) return;
           if (this.cu && this.liveSources && this.cu.end > Date.now() / 1000) return this.goLive('Sin archivo disponible: mostrando el directo.');
-          return this.giveUp(this.cu
+          return this.giveUp(this.texts?.fail || (this.cu
             ? 'No se pudo cargar el diferido. Puede que el proveedor no tenga archivo de este programa o que la hora no cuadre (Ajustes → Ajuste de hora del diferido).'
             : 'No se pudo reproducir. El servidor puede estar saturado; prueba de nuevo en un momento. ' +
-              'Si es http:// o no permite CORS, configura un proxy en Ajustes.');
+              'Si es http:// o no permite CORS, configura un proxy en Ajustes.'));
         }
         next = 0;
         delay = 3000 * this.round;
       }
-      label = this.round ? `Servidor lento, reintentando (${this.round + 1}/${rounds})…` : this.cu ? 'Cargando diferido…' : 'Conectando…';
+      label = this.round ? `${this.texts ? 'Reintentando' : 'Servidor lento, reintentando'} (${this.round + 1}/${rounds})…` : this.cu ? 'Cargando diferido…' : this.texts?.loading || 'Conectando…';
     }
     this.teardown();
     this.status(label);
@@ -501,7 +502,7 @@ export class Player {
     const t0 = Date.now();
     const draw = () => {
       const s = Math.floor((Date.now() - t0) / 1000);
-      this.msg(s >= 3 ? `${text} ${s} s${s >= 15 ? ' · el servidor tarda en responder' : ''}` : text);
+      this.msg(s >= 3 ? `${text} ${s} s${s >= 15 ? ` · ${this.texts?.slow || 'el servidor tarda en responder'}` : ''}` : text);
     };
     draw();
     this.ticker = setInterval(draw, 1000);

@@ -1,14 +1,14 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016i';
-import * as store from './store.js?v=20261016i';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016i';
-import { Player } from './player.js?v=20261016i';
-import { Epg, hhmm } from './epg.js?v=20261016i';
-import { Mosaic } from './mosaic.js?v=20261016i';
-import { initRemote } from './remote.js?v=20261016i';
-import { autoBackups } from './backups.js?v=20261016i';
-import { Zapper } from './zap.js?v=20261016i';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016j';
+import * as store from './store.js?v=20261016j';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016j';
+import { Player } from './player.js?v=20261016j';
+import { Epg, hhmm } from './epg.js?v=20261016j';
+import { Mosaic } from './mosaic.js?v=20261016j';
+import { initRemote } from './remote.js?v=20261016j';
+import { autoBackups } from './backups.js?v=20261016j';
+import { Zapper } from './zap.js?v=20261016j';
 
-const VERSION = '2026-10-16i';
+const VERSION = '2026-10-16j';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -677,7 +677,8 @@ function refreshItems(resetScroll) {
   } else if (query) {
     text = p ? 'Sin resultados en las carpetas cargadas' + (p.fullLoading ? ' (el catálogo completo aún se está descargando)' : '') : 'Sin resultados';
   } else if (id === REC) {
-    text = 'Aún no hay grabaciones. Toca ≡ en un canal para abrir su guía y pulsa ⏺ en un programa (o «Programar a mano»).';
+    text = recorder ? 'Aún no hay grabaciones. Toca ≡ en un canal para abrir su guía y pulsa ⏺ en un programa (o «Programar a mano»).'
+      : 'Las grabaciones de la Raspberry Pi solo se ven abriendo la app desde su dirección (la que termina en :8090) en la red de casa.';
   } else if (id === FAV) {
     text = 'Aún no hay favoritos. Pulsa ★ en cualquier elemento.' + (p ? ' Los de carpetas aún no abiertas aparecerán al cargar el catálogo.' : '');
   } else if (p && f && pending(d, f)) {
@@ -1107,7 +1108,7 @@ function recStatus(r) {
   const days = archiveDays(chans);
   if (now < r.start) return `Programada · ${dayLabel(r.start)} ${hhmm(r.start)}–${hhmm(r.end)}`;
   if (now < r.end) return `● En curso desde las ${hhmm(r.start)} · toca para verlo desde el principio`;
-  if (!days) return `${dayLabel(r.start)} ${hhmm(r.start)} · sin archivo en estos canales`;
+  if (!days) return `${dayLabel(r.start)} ${hhmm(r.start)} · guardada en este navegador, no en la Raspberry · sin archivo en el proveedor, no se puede ver`;
   const until = r.start + days * DAY;
   return now < until ? `${dayLabel(r.start)} ${hhmm(r.start)} · disponible hasta ${dayLabel(until)} ${hhmm(until)}` : `${dayLabel(r.start)} · caducada (fuera del archivo)`;
 }
@@ -1134,6 +1135,12 @@ function onRecClick(r, act) {
   }
   const ch = liveById(saved.ch);
   if (!ch) return toast('El canal de esta grabación ya no existe');
+  // Not a Pi recording: a programme saved in this browser to be played from the provider's archive.
+  // Without archive that would only open the channel live, which is not what was asked for.
+  if (Date.now() / 1000 >= saved.end && !hasArchive([ch, ...saved.backups.map(liveById).filter(Boolean)])) {
+    return toast('Esto no es una grabación de la Raspberry Pi: es un programa guardado en este navegador para verlo desde el archivo del proveedor, y tu proveedor no guarda archivo. ' +
+      'Las grabaciones de la Raspberry se ven abriendo la app desde su dirección (la que termina en :8090) en la red de casa.', 12000);
+  }
   if (Date.now() / 1000 < saved.start) return toast(`Empieza ${dayLabel(saved.start)} a las ${hhmm(saved.start)}. Desde ese momento podrás verlo desde el principio.`, 5000);
   playCatchup(ch, saved, null, saved.backups);
 }
@@ -1208,7 +1215,13 @@ function playPiRec(r) {
   const url = `/rec/${r.id}/index.m3u8`;
   const start = r.parts?.find(p => p.segments)?.start || r.start;
   player.open([{ ...r, name: r.title }], 0, () => ({
-    title: r.title, fromStart: true, attempts: [['hls', url], ['native-hls', url]],
+    title: `⏺ ${r.title}`, fromStart: true, attempts: [['hls', url], ['native-hls', url]],
+    // Played from the Pi's USB stick: the provider (and the channel) are not involved at all.
+    texts: {
+      loading: 'Abriendo la grabación de la Raspberry Pi…',
+      slow: 'la Raspberry Pi tarda en responder',
+      fail: 'No se pudo reproducir la grabación desde la Raspberry Pi. Comprueba que este dispositivo está en la red de casa y vuelve a intentarlo.',
+    },
     seekbar: { start, planned: r.end - start, growing: () => piRecs.find(x => x.id === r.id)?.state === 'recording' },
   }));
 }
