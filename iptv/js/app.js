@@ -1,14 +1,14 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016h';
-import * as store from './store.js?v=20261016h';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016h';
-import { Player } from './player.js?v=20261016h';
-import { Epg, hhmm } from './epg.js?v=20261016h';
-import { Mosaic } from './mosaic.js?v=20261016h';
-import { initRemote } from './remote.js?v=20261016h';
-import { autoBackups } from './backups.js?v=20261016h';
-import { Zapper } from './zap.js?v=20261016h';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016i';
+import * as store from './store.js?v=20261016i';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016i';
+import { Player } from './player.js?v=20261016i';
+import { Epg, hhmm } from './epg.js?v=20261016i';
+import { Mosaic } from './mosaic.js?v=20261016i';
+import { initRemote } from './remote.js?v=20261016i';
+import { autoBackups } from './backups.js?v=20261016i';
+import { Zapper } from './zap.js?v=20261016i';
 
-const VERSION = '2026-10-16h';
+const VERSION = '2026-10-16i';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -29,8 +29,9 @@ let mosaicOn = false;
 let playerKind = '';           // 'live' | 'vod' | 'series'
 const seriesCache = new Map();
 const ui = Object.assign({ tab: 'live', folder: {} }, store.get('ui', {}));
-const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 1, epg: true, cuShift: 0, fit: 'cover', autoFs: true }, store.get('settings', {}));
+const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 1, epg: true, cuShift: 0, fit: 'contain', autoFs: true }, store.get('settings', {}));
 if (!settings.v2) { settings.scan = 1; settings.v2 = true; }   // mosaic now captures after 1 s by default
+if (!settings.v3) { settings.fit = 'contain'; settings.v3 = true; }   // zoom cut the channel logos: show the whole picture
 ui.hideDead ??= false;
 
 const player = new Player($('#player'), () => settings);

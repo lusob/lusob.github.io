@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016h';
+import { startEngine, resetVideo } from './engines.js?v=20261016i';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
@@ -17,7 +17,9 @@ const STALL_WINDOW = 180e3;  // a second cut within this time grows the buffer
 const FILL_STUCK = 25;       // s without the buffer growing while refilling → reconnect
 const BACKUP_RECONNECTS = 2; // with backups: reconnects before switching source
 const LIVE_EDGE = 90;        // catch-up closer than this (s) to now → switch to live
-const FITS = [['cover', 'Zoom'], ['contain', 'Ajustar'], ['fill', 'Estirar']];   // picture framing, first = default
+// Picture framing, first = default. 'safe': whole picture with a margin, for TVs that crop the
+// edges of the screen (overscan), which cuts the channel logos.
+const FITS = [['contain', 'Ajustar'], ['safe', 'Margen TV'], ['cover', 'Zoom'], ['fill', 'Estirar']];
 
 export class Player {
   // getSettings() → { buffer, bufferMax } in seconds
@@ -139,7 +141,8 @@ export class Player {
 
   applyFit() {
     const f = FITS.find(f => f[0] === this.getSettings().fit) || FITS[0];
-    this.video.style.objectFit = f[0];
+    this.video.style.objectFit = f[0] === 'safe' ? 'contain' : f[0];
+    this.video.classList.toggle('safe', f[0] === 'safe');
     this.zoomBtn.textContent = f[1];
   }
 
