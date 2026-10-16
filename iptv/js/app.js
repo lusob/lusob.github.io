@@ -1,12 +1,12 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016f';
-import * as store from './store.js?v=20261016f';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016f';
-import { Player } from './player.js?v=20261016f';
-import { Epg, hhmm } from './epg.js?v=20261016f';
-import { Mosaic } from './mosaic.js?v=20261016f';
-import { initRemote } from './remote.js?v=20261016f';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016g';
+import * as store from './store.js?v=20261016g';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016g';
+import { Player } from './player.js?v=20261016g';
+import { Epg, hhmm } from './epg.js?v=20261016g';
+import { Mosaic } from './mosaic.js?v=20261016g';
+import { initRemote } from './remote.js?v=20261016g';
 
-const VERSION = '2026-10-16f';
+const VERSION = '2026-10-16g';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -39,7 +39,7 @@ const mosaic = new Mosaic($('#mosaic'), {
   getSettings: () => settings,
   attempts: it => liveAttempts(it),
   canScan: () => !recorder?.recording?.length,
-  onOpen: (items, i) => { mosaic.stop(); recorderBusy(); playerKind = 'live'; player.open(items, i, resolveLive, favCtl('live')); },
+  onOpen: async (items, i) => { mosaic.stop(); if (!(await confirmBusy())) return mosaic.resume(); playerKind = 'live'; player.open(items, i, resolveLive, favCtl('live')); },
   info: it => esc(epgNow(it)?.title || ''),
   onVisible: items => { if (settings.epg && epg) epg.want(items.map(i => i.id)); },
   onStats: ({ dead }) => { $('#deadCount').textContent = dead ? ` (${dead})` : ''; },
@@ -370,7 +370,7 @@ async function discover(type) {
   throw err;
 }
 
-const fmtSize = n => !n ? '0 KB' : n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' KB';
+const fmtSize = n => !n ? '0 KB' : n > 1e9 ? (n / 1e9).toFixed(n > 1e10 ? 0 : 1) + ' GB' : n > 1e6 ? Math.round(n / 1e6) + ' MB' : Math.round(n / 1e3) + ' KB';
 
 // Section served by another host (found by discover()): use it for its requests and URLs.
 const apiFor = type => data[type]?.server ? (altApis[data[type].server] ||= api.withServer(data[type].server)) : api;
@@ -556,7 +556,8 @@ function renderFolders(keepScroll = true) {
   const rows = [
     { id: FAV, name: '★ Favoritos', count: favItems.length, date: favItems[0]?.added, virtual: true },
     { id: ALL, name: 'Todo', count: all.length, date: all[0]?.added, virtual: true },
-    ...(ui.tab === 'live' && (recorder || d.anyArchive || recs.length) ? [{ id: REC, name: '⏺ Grabaciones', count: recList().length, virtual: true }] : []),
+    ...(ui.tab === 'live' && (recorder || d.anyArchive || recs.length) ? [{ id: REC, name: '⏺ Grabaciones', count: recList().length, virtual: true,
+      extra: recorder?.disk?.total ? `${fmtSize(recorder.disk.free)} libres` : '' }] : []),
     ...folders.filter(f => fc.has(f.id)),
     ...folders.filter(f => !fc.has(f.id)),
   ];
@@ -575,7 +576,7 @@ function renderFolderRow(f) {
   const p = data[ui.tab].partial;
   const meta = !f.virtual && pending(data[ui.tab], f)
     ? (p.loading.has(f.id) ? 'Cargando…' : p.errors.has(f.id) ? 'Error · toca para reintentar' : 'Toca para abrir')
-    : [count + (count === 1 ? ' elemento' : ' elementos'), !data[ui.tab].noDate && ago(date)].filter(Boolean).join(' · ');
+    : [count + (count === 1 ? ' elemento' : ' elementos'), !data[ui.tab].noDate && ago(date), f.extra].filter(Boolean).join(' · ');
   return `<div class="row${active ? ' active' : ''}">
     <div class="grow"><div class="name">${esc(f.name)}</div><div class="meta">${meta}</div></div>
     ${!data[ui.tab].noDate && isNew(date) && f.id !== FAV ? '<span class="badge">Nuevo</span>' : ''}
@@ -730,9 +731,12 @@ function onItemClick(it, i, act) {
     return;
   }
   if (ui.tab === 'series') return openSeries(it);
-  playerKind = ui.tab;
-  recorderBusy();
-  player.open(list, i, ui.tab === 'live' ? resolveLive : resolveVod, favCtl(ui.tab));
+  const items = list;
+  confirmBusy().then(ok => {
+    if (!ok) return;
+    playerKind = ui.tab;
+    player.open(items, i, ui.tab === 'live' ? resolveLive : resolveVod, favCtl(ui.tab));
+  });
 }
 
 // Favorite toggle from inside the player. For episodes, the favorite is the series.
@@ -853,19 +857,29 @@ function updatePlayerButtons(it) {
 
 // Record what is on screen on the Raspberry Pi and keep watching it from the recording
 // (the account allows a single connection: live + recorder at once would cut each other).
-$('#pRec').addEventListener('click', async () => {
+$('#pRec').addEventListener('click', e => {
+  e.stopPropagation();
   const ch = player.current, now = Date.now() / 1000;
   const prog = epg?.get(ch.id)?.now;
-  const r = await saveRec({
-    ch: ch.id, title: prog?.title ? `${ch.name} · ${prog.title}` : ch.name,
-    start: now, end: prog ? prog.end + PAD_END : now + 2 * 3600, backups: backups[ch.id] || [],
-  }, false);
-  if (!r) return;
-  player.close();
-  toast('Grabando en la Raspberry Pi. Lo ves desde la grabación para no gastar otra conexión.', 6000);
-  setTimeout(() => playPiRec(r), 12000);
-  loading('Empezando la grabación…');
-  setTimeout(() => loading(''), 12000);
+  const active = activeRec();
+  const go = async (end, label) => {
+    const r = await saveRec({
+      ch: ch.id, title: prog?.title ? `${ch.name} · ${prog.title}` : ch.name,
+      start: now, end, backups: backups[ch.id] || [],
+    }, false);
+    if (!r) return;
+    // Watch it from the recording: the account allows a single connection.
+    player.close();
+    loading(`Empezando a grabar ${label}…`);
+    setTimeout(() => { loading(''); playPiRec(r); }, 12000);
+  };
+  const entries = [];
+  if (active) entries.push({ label: `■ Detener la grabación de «${active.title}»`, fn: () => stopPiRec(active) });
+  else {
+    if (prog) entries.push({ label: `Hasta el final de «${prog.title}» (${hhmm(prog.end + PAD_END)})`, fn: () => go(prog.end + PAD_END, 'hasta el final del programa') });
+    for (const h of [1, 2, 3, 4]) entries.push({ label: `${h} hora${h > 1 ? 's' : ''} (hasta las ${hhmm(now + h * 3600)})`, fn: () => go(now + h * 3600, `${h} h`) });
+  }
+  player.showMenu(active ? 'Grabación en marcha' : 'Grabar en la Raspberry Pi', entries);
 });
 
 $('#pStart').addEventListener('click', () => {
@@ -1108,6 +1122,7 @@ async function loadPiRecs() {
     if (ui.folder.live === REC && !query && !series) refreshItems(false);
   }
   if (player.isOpen) updatePlayerButtons(player.current);
+  updateRecBanner();
 }
 
 async function savePiRec(r, announce) {
@@ -1132,7 +1147,46 @@ function playPiRec(r) {
   mosaic.stop();
   playerKind = 'rec';
   const url = `/rec/${r.id}/index.m3u8`;
-  player.open([{ ...r, name: r.title }], 0, () => ({ title: r.title, fromStart: true, attempts: [['hls', url], ['native-hls', url]] }));
+  const start = r.parts?.find(p => p.segments)?.start || r.start;
+  player.open([{ ...r, name: r.title }], 0, () => ({
+    title: r.title, fromStart: true, attempts: [['hls', url], ['native-hls', url]],
+    seekbar: { start, planned: r.end - start, growing: () => piRecs.find(x => x.id === r.id)?.state === 'recording' },
+  }));
+}
+
+const activeRec = () => piRecs.find(r => r.state === 'recording');
+
+async function stopPiRec(r) {
+  try {
+    await piApi('POST', `recs/${r.id}/stop`);
+    toast('Grabación detenida', 2500);
+    setTimeout(loadPiRecs, 1500);
+  } catch (ex) { toast(ex.message); }
+}
+
+// Always visible while the Pi records: the single connection is taken until it ends.
+function updateRecBanner() {
+  const r = activeRec();
+  const b = $('#recBanner');
+  b.hidden = !r;
+  if (r) b.textContent = `● Grabando «${r.title}» hasta las ${hhmm(r.end)} · no veas otros canales hasta entonces`;
+}
+$('#recBanner').addEventListener('click', () => { const r = activeRec(); if (r) playPiRec(r); });
+
+// Before using the connection for something else while recording.
+function confirmBusy() {
+  const r = activeRec();
+  if (!r) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const dlg = $('#busyDialog');
+    $('#busyText').textContent = `La Raspberry Pi está grabando «${r.title}» hasta las ${hhmm(r.end)}. Tu cuenta solo permite una conexión: si abres otro canal, la grabación se cortará (o se cortará lo que veas).`;
+    dlg.returnValue = '';
+    dlg.onclose = () => {
+      if (dlg.returnValue === 'rec') { playPiRec(r); resolve(false); }
+      else resolve(dlg.returnValue === 'anyway');
+    };
+    dlg.showModal();
+  });
 }
 
 function piStatus(r) {
@@ -1146,12 +1200,6 @@ function piStatus(r) {
   }
 }
 
-// Warn before something else uses the single connection while the Pi records.
-function recorderBusy() {
-  if (!recorder?.recording?.length) return false;
-  toast('Ojo: la Raspberry Pi está grabando con tu única conexión; ver otro canal puede cortar la grabación.', 6000);
-  return true;
-}
 
 // ---- recording / backup dialog
 
@@ -1174,6 +1222,7 @@ function editRec(r, isNew = false) {
   sel.value = String(dur);
   $('#planDelete').hidden = isNew;
   $('#planDelete').textContent = r.pi && r.state !== 'scheduled' ? 'Borrar grabación' : 'Borrar';
+  $('#planStop').hidden = !(r.pi && r.state === 'recording');
   $('#planStart').disabled = !!r.pi && r.state !== 'scheduled';
   openPlan();
 }
@@ -1184,6 +1233,7 @@ function editBackups(ch) {
   $('#planHint').textContent = 'Si el canal no carga o se corta, se pasa al siguiente de la lista (y en diferido, al mismo minuto). Usa canales que emitan lo mismo; los marcados con ⏪ tienen archivo.';
   $('#planFields').hidden = true;
   $('#planDelete').hidden = true;
+  $('#planStop').hidden = true;
   openPlan();
 }
 
@@ -1232,6 +1282,7 @@ $('#planDialog').addEventListener('close', () => {
   const v = $('#planDialog').returnValue;
   const p = plan;
   plan = null;
+  if (p && v === 'stop') return stopPiRec(p.rec);
   if (!p || (v !== 'save' && v !== 'delete')) return;
   if (p.mode === 'backup') {
     backups[p.ch.id] = p.picked;

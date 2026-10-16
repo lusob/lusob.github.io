@@ -27,7 +27,8 @@ export function startEngine(v, engine, url, opt, fail) {
       // Live: play `buffer` seconds behind the edge, so that much is always downloaded ahead.
       liveSyncDuration: buffer,
       // Generous: the adaptive buffer may leave us well behind the edge; don't jump back to live.
-      liveMaxLatencyDuration: Math.max(buffer * 3 + 10, 600),
+      // (a recording still growing is a "live" playlist to hls.js: never jump to its end on our own)
+      liveMaxLatencyDuration: fromStart ? 1e9 : Math.max(buffer * 3 + 10, 600),
       maxBufferLength: Math.max(30, buffer * 2),
       maxMaxBufferLength: Math.max(120, buffer * 4),
       backBufferLength: 30,

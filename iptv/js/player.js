@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016f';
+import { startEngine, resetVideo } from './engines.js?v=20261016g';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
@@ -54,6 +54,12 @@ export class Player {
     this.menu.addEventListener('click', e => {
       e.stopPropagation();
       const b = e.target.closest('[data-id]');
+      if (b && this.menu.dataset.kind === 'custom') {
+        const fn = this.menuFns?.[+b.dataset.id];
+        this.closeMenu();
+        fn?.();
+        return;
+      }
       if (!b || !this.engine) return;
       const id = +b.dataset.id;
       if (this.menu.dataset.kind === 'audio') this.engine.setAudio?.(id);
@@ -62,13 +68,14 @@ export class Player {
       setTimeout(() => this.updateTracks(), 100);
     });
     root.addEventListener('click', () => this.closeMenu());
-    root.querySelector('#cuBack').onclick = () => this.seek(this.cuPos() - 300);
-    root.querySelector('#cuFwd').onclick = () => this.seek(this.cuPos() + 300);
-    root.querySelector('#cuLive').onclick = () => this.goLive('');
+    root.querySelector('#cuBack').onclick = () => this.sk ? this.skSeek(this.video.currentTime - 300) : this.seek(this.cuPos() - 300);
+    root.querySelector('#cuFwd').onclick = () => this.sk ? this.skSeek(this.video.currentTime + 300) : this.seek(this.cuPos() + 300);
+    root.querySelector('#cuLive').onclick = () => this.sk ? this.skSeek(Infinity) : this.goLive('');
     root.querySelector('#cuTrack').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();
       const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-      this.seek(this.cu.start + f * (this.cu.end - this.cu.start));
+      if (this.sk) this.skSeek(f * this.skSpan());
+      else this.seek(this.cu.start + f * (this.cu.end - this.cu.start));
     });
 
     const v = this.video;
@@ -136,6 +143,8 @@ export class Player {
     this.sources = r.sources || [{ name: r.title, attempts: () => r.attempts }];
     this.liveSources = r.liveSources || null;
     this.cu = r.catchup ? { start: r.catchup.start, end: r.catchup.end, base: r.catchup.pos ?? r.catchup.start } : null;
+    // A recording (possibly still growing): its own seek bar over what has been recorded so far.
+    this.sk = r.seekbar ? { start: r.seekbar.start, planned: r.seekbar.planned, growing: () => !!r.seekbar.growing?.() } : null;
     this.src = 0;
     this.switches = 0;
     this.resetCounters();
@@ -166,7 +175,7 @@ export class Player {
   updateTitle() {
     const s = this.sources[this.src];
     this.title.textContent = this.baseTitle + (this.src > 0 ? ` · respaldo: ${s.name}` : '');
-    this.root.classList.toggle('catchup', !!this.cu);
+    this.root.classList.toggle('catchup', !!(this.cu || this.sk));
     this.drawCu();
   }
 
@@ -209,6 +218,29 @@ export class Player {
     this.attempt(0, text || 'Pasando al directo…');
   }
 
+  drawSk() {
+    const span = this.skSpan(), avail = this.skAvail(), t = this.video.currentTime || 0;
+    const hm = s => new Date((this.sk.start + s) * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    this.cuBar.querySelector('#cuFill').style.width = `${Math.min(1, t / span) * 100}%`;
+    this.cuBar.querySelector('#cuAvail').style.width = `${Math.min(1, avail / span) * 100}%`;
+    this.cuBar.querySelector('#cuTime').textContent = hm(t);
+    this.cuBar.querySelector('#cuEnd').textContent = hm(span);
+    const live = this.cuBar.querySelector('#cuLive');
+    live.hidden = !this.sk.growing();
+    live.textContent = avail - t > 30 ? 'Ir al final' : '● Al día';
+  }
+
+  // Menu with arbitrary actions: entries [{ label, on?, fn }].
+  showMenu(title, entries) {
+    this.menuFns = entries.map(e => e.fn);
+    this.menu.innerHTML = `<div class="pm-title">${escHtml(title)}</div>` +
+      entries.map((e, i) => `<button data-id="${i}" class="${e.on ? 'on' : ''}">${escHtml(e.label)}</button>`).join('');
+    this.menu.dataset.kind = 'custom';
+    this.menu.hidden = false;
+    this.root.classList.remove('idle');
+    this.menu.querySelector('button')?.focus();
+  }
+
   finish() {
     if (!this.cu) return;
     this.teardown();
@@ -222,11 +254,29 @@ export class Player {
 
   startCuTimer() {
     clearInterval(this.cuTimer);
-    if (this.cu) this.cuTimer = setInterval(() => this.drawCu(), 1000);
+    if (this.cu || this.sk) this.cuTimer = setInterval(() => this.drawCu(), 1000);
+  }
+
+  // ---- seek bar of a recording: plain seeking inside what the playlist already has
+
+  skAvail() {
+    const s = this.video.seekable;
+    return s.length ? s.end(s.length - 1) : 0;
+  }
+
+  skSpan() { return Math.max(this.sk.planned || 0, this.skAvail(), 1); }
+
+  skSeek(t) {
+    const avail = this.skAvail();
+    if (!avail) return;
+    this.video.currentTime = Math.max(0, Math.min(t, avail - (this.sk.growing() ? 8 : 1)));
+    this.play();
+    this.drawCu();
   }
 
   drawCu() {
-    this.cuBar.hidden = !this.cu;
+    this.cuBar.hidden = !(this.cu || this.sk);
+    if (this.sk) return this.drawSk();
     if (!this.cu) return;
     const { start, end } = this.cu;
     const span = end - start, now = Date.now() / 1000;
@@ -501,6 +551,7 @@ export class Player {
     this.retryBtn.hidden = true;
     clearInterval(this.cuTimer);
     this.cu = null;
+    this.sk = null;
     this.cuBar.hidden = true;
     this.root.classList.remove('catchup');
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});

@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261016f">
+  <link rel="stylesheet" href="css/app.css?v=20261016g">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261016f"></script>
+  <script type="module" src="js/app.js?v=20261016g"></script>
 </head>
 <body>
 
@@ -47,6 +47,7 @@
         <button data-tab="vod" role="tab">Películas</button>
         <button data-tab="series" role="tab">Series</button>
       </nav>
+      <button id="recBanner" hidden></button>
       <input id="search" type="search" placeholder="Buscar" autocomplete="off" spellcheck="false">
       <button id="refresh" class="icon" title="Actualizar listas" aria-label="Actualizar">⟳</button>
       <button id="settingsBtn" class="icon" title="Ajustes" aria-label="Ajustes">⚙</button>
@@ -201,8 +202,22 @@
       </div>
       <div class="actions">
         <button value="save" class="primary">Guardar</button>
+        <button value="stop" id="planStop" hidden>■ Detener ahora</button>
         <button value="delete" id="planDelete" class="danger">Borrar</button>
         <button value="cancel" formnovalidate>Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Single connection busy with a recording -->
+  <dialog id="busyDialog">
+    <form method="dialog" class="card">
+      <h2>Grabación en marcha</h2>
+      <p id="busyText" class="hint"></p>
+      <div class="actions">
+        <button value="rec" class="primary">Ver la grabación</button>
+        <button value="anyway" class="danger">Ver este canal igualmente</button>
+        <button value="cancel">Cancelar</button>
       </div>
     </form>
   </dialog>
