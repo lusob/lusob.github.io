@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261016g">
+  <link rel="stylesheet" href="css/app.css?v=20261016h">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261016g"></script>
+  <script type="module" src="js/app.js?v=20261016h"></script>
 </head>
 <body>
 
@@ -80,6 +80,7 @@
     <video id="video" controls playsinline></video>
     <div class="pbar">
       <button id="pClose" class="icon" aria-label="Cerrar">✕</button>
+      <button id="pList" class="icon" aria-label="Lista de canales" hidden>☰</button>
       <div class="ptext">
         <div id="pTitle"></div>
         <div id="pInfo" hidden></div>
@@ -93,6 +94,7 @@
       <button id="pSubs" class="icon txt" aria-label="Subtítulos" hidden>CC</button>
       <button id="pPrev" class="icon" aria-label="Anterior">‹</button>
       <button id="pNext" class="icon" aria-label="Siguiente">›</button>
+      <button id="pZoom" class="icon txt" aria-label="Encuadre de la imagen">Zoom</button>
       <button id="pFs" class="icon" aria-label="Pantalla completa">⛶</button>
     </div>
     <div id="pCu" hidden>
@@ -106,6 +108,15 @@
     <div id="pMsg"></div>
     <button id="pRetry" class="primary" hidden>Reintentar</button>
     <div id="pMenu" hidden></div>
+    <div id="pilot" hidden></div>
+    <aside id="zap" hidden>
+      <div class="z-head">
+        <button id="zBack" class="icon txt">‹ Carpetas</button>
+        <h3 id="zTitle"></h3>
+        <button id="zClose" class="icon" aria-label="Cerrar">✕</button>
+      </div>
+      <div id="zList"></div>
+    </aside>
   </div>
 
   <!-- Settings -->
@@ -148,6 +159,7 @@
         </select>
       </label>
       <label class="check"><input id="epgInput" type="checkbox"> Mostrar guía (EPG) en la lista de canales</label>
+      <label class="check"><input id="autoFsInput" type="checkbox"> Pantalla completa automática al abrir un canal</label>
       <button type="button" id="diagBtn">Diagnóstico de conexión</button>
       <pre id="diagOut" class="diag" hidden></pre>
       <label>Proxy (opcional)
@@ -197,6 +209,7 @@
       <div class="plan-bk">
         <div class="muted">Canales de respaldo (si el principal falla o se corta)</div>
         <div id="planChips" class="chips"></div>
+        <button type="button" id="planAuto" hidden>↺ Usar los automáticos</button>
         <input id="planSearch" type="search" placeholder="Añadir canal: escribe su nombre" autocomplete="off" spellcheck="false">
         <div id="planResults"></div>
       </div>

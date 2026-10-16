@@ -1,12 +1,14 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016g';
-import * as store from './store.js?v=20261016g';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016g';
-import { Player } from './player.js?v=20261016g';
-import { Epg, hhmm } from './epg.js?v=20261016g';
-import { Mosaic } from './mosaic.js?v=20261016g';
-import { initRemote } from './remote.js?v=20261016g';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016h';
+import * as store from './store.js?v=20261016h';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016h';
+import { Player } from './player.js?v=20261016h';
+import { Epg, hhmm } from './epg.js?v=20261016h';
+import { Mosaic } from './mosaic.js?v=20261016h';
+import { initRemote } from './remote.js?v=20261016h';
+import { autoBackups } from './backups.js?v=20261016h';
+import { Zapper } from './zap.js?v=20261016h';
 
-const VERSION = '2026-10-16g';
+const VERSION = '2026-10-16h';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -27,11 +29,12 @@ let mosaicOn = false;
 let playerKind = '';           // 'live' | 'vod' | 'series'
 const seriesCache = new Map();
 const ui = Object.assign({ tab: 'live', folder: {} }, store.get('ui', {}));
-const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 1, epg: true, cuShift: 0 }, store.get('settings', {}));
+const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 1, epg: true, cuShift: 0, fit: 'cover', autoFs: true }, store.get('settings', {}));
 if (!settings.v2) { settings.scan = 1; settings.v2 = true; }   // mosaic now captures after 1 s by default
 ui.hideDead ??= false;
 
 const player = new Player($('#player'), () => settings);
+player.saveSettings = () => store.set('settings', settings);
 const folderList = new VList($('#folders'), 64, renderFolderRow, onFolderClick);
 const itemList = new VList($('#items'), 76, renderItemRow, onItemClick, () => scheduleEpg());
 let epg = null;
@@ -39,7 +42,7 @@ const mosaic = new Mosaic($('#mosaic'), {
   getSettings: () => settings,
   attempts: it => liveAttempts(it),
   canScan: () => !recorder?.recording?.length,
-  onOpen: async (items, i) => { mosaic.stop(); if (!(await confirmBusy())) return mosaic.resume(); playerKind = 'live'; player.open(items, i, resolveLive, favCtl('live')); },
+  onOpen: async (items, i) => { mosaic.stop(); if (!(await confirmBusy())) return mosaic.resume(); openLive(items, i, $('#listTitle').textContent, ui.folder.live); },
   info: it => esc(epgNow(it)?.title || ''),
   onVisible: items => { if (settings.epg && epg) epg.want(items.map(i => i.id)); },
   onStats: ({ dead }) => { $('#deadCount').textContent = dead ? ` (${dead})` : ''; },
@@ -47,8 +50,18 @@ const mosaic = new Mosaic($('#mosaic'), {
 
 const saveUi = () => store.set('ui', ui);
 
+// Channel list on the left and "pilot" footer over the live player.
+const zap = new Zapper({
+  player,
+  epg: () => settings.epg ? epg : null,
+  enabled: () => player.isOpen && playerKind === 'live' && !player.cu && !player.sk && !!player.current && !!liveById(player.current.id),
+  folders: zapFolders,
+  folderItems: zapItems,
+  play: async (items, i, title, folderId) => { if (await confirmBusy()) openLive(items, i, title, folderId); },
+});
+
 const remote = initRemote({
-  folderList, itemList, player,
+  folderList, itemList, player, zap,
   mosaicEl: $('#mosaic'),
   seriesEl: $('#series'),
   openFolder: i => onFolderClick(folderList.items[i], i, null),
@@ -144,7 +157,7 @@ function logout() {
 
 // ---------------------------------------------------------------- favorites
 
-let backups = {};   // channel id → [backup channel ids]
+let backups = {};   // channel id → [backup channel ids] chosen by hand (otherwise: automatic, by name)
 let recs = [];      // saved programmes: { id, ch, title, start, end, backups }
 const saveBackups = () => store.set('bk:' + account, backups);
 const saveRecs = () => store.set('rec:' + account, recs);
@@ -731,13 +744,49 @@ function onItemClick(it, i, act) {
     return;
   }
   if (ui.tab === 'series') return openSeries(it);
-  const items = list;
+  const items = list, title = $('#listTitle').textContent;
   confirmBusy().then(ok => {
     if (!ok) return;
+    if (ui.tab === 'live') return openLive(items, i, title, query ? null : ui.folder.live);
     playerKind = ui.tab;
-    player.open(items, i, ui.tab === 'live' ? resolveLive : resolveVod, favCtl(ui.tab));
+    player.open(items, i, resolveVod, favCtl(ui.tab));
   });
 }
+
+// Live channel `i` of `items` (a folder, favourites, search results…), named `title` in the side list.
+function openLive(items, i, title, folderId) {
+  playerKind = 'live';
+  player.queueTitle = title || 'Canales';
+  player.queueFolder = folderId ?? null;
+  player.open(items, i, resolveLive, favCtl('live'));
+}
+
+// Folders for the side list in the player: favourites, everything, then as in the main list.
+function zapFolders() {
+  const d = data.live;
+  if (!d) return [];
+  const fc = favs.live.cats, all = visItems(d);
+  const favCount = all.filter(i => favs.live.items.has(i.id)).length;
+  const folders = d.folders.filter(f => folderVisible(d, f));
+  if (!d.partial) folders.sort((a, b) => folderDate(b) - folderDate(a));
+  return [
+    ...(favCount ? [{ id: FAV, name: '★ Favoritos', count: favCount }] : []),
+    { id: ALL, name: 'Todo', count: all.length },
+    ...[...folders.filter(f => fc.has(f.id)), ...folders.filter(f => !fc.has(f.id))]
+      .map(f => ({ id: f.id, name: f.name, count: pending(d, f) ? '' : folderItems(f).length })),
+  ];
+}
+
+async function zapItems(id) {
+  if (id === FAV) return visItems(data.live).filter(i => favs.live.items.has(i.id));
+  if (id === ALL) return visItems(data.live);
+  const f = data.live.folderById.get(id);
+  if (f && pending(data.live, f)) await loadFolder('live', id);
+  const g = data.live.folderById.get(id);
+  return g ? folderItems(g) : [];
+}
+
+$('#pList').addEventListener('click', e => { e.stopPropagation(); zap.isOpen ? zap.close() : zap.openChans(); });
 
 // Favorite toggle from inside the player. For episodes, the favorite is the series.
 function favCtl(type, fixed = null) {
@@ -790,6 +839,7 @@ function onEpg(id) {
   const it = data.live?.byId.get(id);
   if (it && !$('#mosaic').hidden) mosaic.refreshInfo(it);
   if (player.isOpen && playerKind === 'live' && player.current?.id === id) updatePlayerEpg(player.current);
+  if (player.isOpen) zap.onEpg(id);
 }
 
 function updatePlayerEpg(it) {
@@ -803,6 +853,7 @@ function updatePlayerEpg(it) {
 
 player.onchange = it => {
   updatePlayerButtons(it);
+  zap.changed();
   if (playerKind !== 'live' || !epg) return;
   epg.want([it.id], true);
   updatePlayerEpg(it);
@@ -810,6 +861,7 @@ player.onchange = it => {
 
 player.onclose = () => {
   updatePlayerButtons(null);
+  zap.reset();
   if (mosaicOn && !$('#mosaic').hidden) mosaic.resume();
 };
 
@@ -824,7 +876,10 @@ setInterval(() => {
 // main one has no archive or cuts out.
 
 const liveById = id => data.live?.byId.get(String(id));
-const backupsOf = id => (backups[id] || []).map(liveById).filter(Boolean);
+// Backups chosen by hand, or else the other versions of the channel (HD / FHD / SD…) found by name.
+const autoBackupIds = id => { const ch = liveById(id); return ch ? autoBackups(ch, data.live.items) : []; };
+const backupIds = id => backups[id] ?? autoBackupIds(id);
+const backupsOf = id => backupIds(id).map(liveById).filter(Boolean);
 const hasArchive = chans => chans.some(c => c.archive > 0);
 const archiveDays = chans => Math.max(0, ...chans.map(c => c.archive || 0));
 
@@ -836,6 +891,8 @@ function playCatchup(ch, prog, pos = null, backupIds = null) {
   const start = prog.start - PAD_START, end = prog.end + PAD_END;
   mosaic.stop();
   playerKind = 'live';
+  player.queueTitle = ch.name;
+  player.queueFolder = null;
   player.cuInfo = `<b>Diferido</b> ${esc(prog.title || '')} <span class="dim">${dayLabel(prog.start)} ${hhmm(prog.start)}–${hhmm(prog.end)}</span>`;
   player.open([ch], 0, () => ({
     title: ch.name,
@@ -850,6 +907,7 @@ function updatePlayerButtons(it) {
   const live = !!it && player.isOpen && playerKind === 'live' && !!liveById(it.id);
   const now = live && epg?.get(it.id)?.now;
   $('#pGuide').hidden = !live;
+  $('#pList').hidden = !(live && !player.cu && !player.sk);
   $('#pBackup').hidden = !live;
   $('#pStart').hidden = !(live && !player.cu && now && hasArchive([it, ...backupsOf(it.id)]));
   $('#pRec').hidden = !(live && recorder && !player.cu);
@@ -865,7 +923,7 @@ $('#pRec').addEventListener('click', e => {
   const go = async (end, label) => {
     const r = await saveRec({
       ch: ch.id, title: prog?.title ? `${ch.name} · ${prog.title}` : ch.name,
-      start: now, end, backups: backups[ch.id] || [],
+      start: now, end, backups: backupIds(ch.id),
     }, false);
     if (!r) return;
     // Watch it from the recording: the account allows a single connection.
@@ -987,9 +1045,9 @@ function renderGuide(ch, list) {
       if (r) editRec(r);
       else if (recorder) {
         // The Pi records with margins: matches start late and run over.
-        saveRec({ ch: ch.id, title: p.title, prog: p.start, start: Math.max(now, p.start - PAD_START), end: p.end + PAD_END, backups: backups[ch.id] || [] }, true)
+        saveRec({ ch: ch.id, title: p.title, prog: p.start, start: Math.max(now, p.start - PAD_START), end: p.end + PAD_END, backups: backupIds(ch.id) }, true)
           .then(() => renderGuide(ch, list));
-      } else saveRec({ ch: ch.id, title: p.title, prog: p.start, start: p.start, end: p.end, backups: backups[ch.id] || [] }, true);
+      } else saveRec({ ch: ch.id, title: p.title, prog: p.start, start: p.start, end: p.end, backups: backupIds(ch.id) }, true);
       renderGuide(ch, list);
     }
   };
@@ -1007,7 +1065,7 @@ function fmtDur(s) {
 $('#gClose').addEventListener('click', () => $('#guide').close());
 $('#gManual').addEventListener('click', () => {
   const start = Math.ceil(Date.now() / 1000 / 900) * 900;
-  editRec({ ch: guideCh.id, title: guideCh.name, start, end: start + 2 * 3600, backups: backups[guideCh.id] || [] }, true);
+  editRec({ ch: guideCh.id, title: guideCh.name, start, end: start + 2 * 3600, backups: backupIds(guideCh.id) }, true);
 });
 $('#gBackups').addEventListener('click', () => editBackups(guideCh));
 
@@ -1228,9 +1286,11 @@ function editRec(r, isNew = false) {
 }
 
 function editBackups(ch) {
-  plan = { mode: 'backup', ch, picked: [...(backups[ch.id] || [])] };
+  plan = { mode: 'backup', ch, picked: backupIds(ch.id) };
   $('#planTitle').textContent = `Respaldo de ${ch.name}`;
-  $('#planHint').textContent = 'Si el canal no carga o se corta, se pasa al siguiente de la lista (y en diferido, al mismo minuto). Usa canales que emitan lo mismo; los marcados con ⏪ tienen archivo.';
+  $('#planHint').textContent = 'Si el canal no carga o se corta, se pasa al siguiente de la lista (y en diferido, al mismo minuto). ' +
+    (ch.id in backups ? 'Lista elegida a mano.' : 'Marcados automáticamente: las otras versiones de este canal (FHD, HD, SD…); quita o añade los que quieras.') +
+    ' Los marcados con ⏪ tienen archivo.';
   $('#planFields').hidden = true;
   $('#planDelete').hidden = true;
   $('#planStop').hidden = true;
@@ -1250,7 +1310,11 @@ function renderPicked() {
     const c = liveById(id);
     return c ? `<button type="button" data-rm="${i}">${i + 1}. ${esc(c.name)}${c.archive ? ' ⏪' : ''} ✕</button>` : '';
   }).join('');
+  const auto = autoBackupIds(plan.ch.id);
+  $('#planAuto').hidden = !auto.length || auto.join() === plan.picked.join();
 }
+
+$('#planAuto').addEventListener('click', () => { plan.picked = autoBackupIds(plan.ch.id); renderPicked(); });
 
 $('#planChips').addEventListener('click', e => {
   const b = e.target.closest('[data-rm]');
@@ -1285,8 +1349,9 @@ $('#planDialog').addEventListener('close', () => {
   if (p && v === 'stop') return stopPiRec(p.rec);
   if (!p || (v !== 'save' && v !== 'delete')) return;
   if (p.mode === 'backup') {
-    backups[p.ch.id] = p.picked;
-    if (!p.picked.length) delete backups[p.ch.id];
+    // Same as the automatic list: keep following it (it adapts when the channel list changes).
+    if (p.picked.join() === autoBackupIds(p.ch.id).join()) delete backups[p.ch.id];
+    else backups[p.ch.id] = p.picked;
     saveBackups();
     if (player.isOpen && player.current?.id === p.ch.id) {
       player.setSources(liveSources([p.ch, ...backupsOf(p.ch.id)]));
@@ -1488,6 +1553,7 @@ $('#settingsBtn').addEventListener('click', () => {
   $('#bufferMaxInput').value = String(settings.bufferMax);
   $('#scanInput').value = String(settings.scan);
   $('#epgInput').checked = !!settings.epg;
+  $('#autoFsInput').checked = settings.autoFs !== false;
   $('#cuShiftInput').value = String(settings.cuShift || 0);
   $('#settings').returnValue = '';
   $('#settings').showModal();
@@ -1500,6 +1566,7 @@ $('#settings').addEventListener('close', async () => {
     settings.bufferMax = Math.max(settings.buffer, +$('#bufferMaxInput').value);
     settings.scan = +$('#scanInput').value;
     settings.epg = $('#epgInput').checked;
+    settings.autoFs = $('#autoFsInput').checked;
     settings.cuShift = +$('#cuShiftInput').value;
     store.set('settings', settings);
     const proxy = $('#proxyInput').value.trim();

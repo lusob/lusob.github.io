@@ -8,9 +8,9 @@ const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const shown = el => !!el && !el.hidden && el.offsetParent !== null && !el.disabled;
 
 export function initRemote(ctx) {
-  // ctx: { folderList, itemList, mosaicEl, seriesEl, player, openFolder(i), openItem(i, act),
+  // ctx: { folderList, itemList, mosaicEl, seriesEl, player, zap, openFolder(i), openItem(i, act),
   //        closeSeries() → bool, narrow() → bool, showFolders() }
-  const { folderList, itemList, player } = ctx;
+  const { folderList, itemList, player, zap } = ctx;
   let zone = null;
   let act = -1;   // items zone: -1 = the row itself, otherwise index of its action button
 
@@ -107,10 +107,17 @@ export function initRemote(ctx) {
       const menu = player.menu;
       const bar = [...player.root.querySelectorAll('.pbar button, #pCu button, #pRetry')].filter(shown);
       const inBar = bar.includes(document.activeElement);
+      // Live: Left = channel list, Up/Down = pilot footer, OK = info / switch (see zap.js).
+      if (menu.hidden && (zap?.isOpen || !(inBar && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Enter'))) && zap?.key(k, isBack)) {
+        e.preventDefault();
+        if (bar.includes(document.activeElement)) document.activeElement.blur();
+        return;
+      }
       if (isBack) {
         e.preventDefault();
         if (!menu.hidden) player.closeMenu();
-        else if (document.fullscreenElement) document.exitFullscreen?.();
+        else if (inBar) document.activeElement.blur();
+        else if (document.fullscreenElement && player.getSettings().autoFs === false) document.exitFullscreen?.();
         else player.close();
       } else if (!menu.hidden && (k === 'ArrowUp' || k === 'ArrowDown')) {
         e.preventDefault();
@@ -121,7 +128,9 @@ export function initRemote(ctx) {
         player.step(k === 'ArrowUp' || k === 'PageUp' || k === 'ChannelUp' ? -1 : 1);
       } else if (k === 'ArrowLeft' || k === 'ArrowRight') {
         e.preventDefault();
-        moveFocus(bar, k === 'ArrowLeft' ? -1 : 1);
+        // Left on the first button leaves the bar (so the next Left opens the channel list).
+        if (k === 'ArrowLeft' && inBar && bar.indexOf(document.activeElement) === 0) document.activeElement.blur();
+        else moveFocus(bar, k === 'ArrowLeft' ? -1 : 1);
       } else if ((k === 'Enter' || k === ' ' || k === 'MediaPlayPause') && !inBar && menu.hidden) {
         e.preventDefault();
         const v = player.video;

@@ -7,15 +7,17 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016g';
+import { startEngine, resetVideo } from './engines.js?v=20261016h';
 
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
 const LOAD_TIMEOUT = 60;     // s without playback before an attempt is considered failed
+const BACKUP_TIMEOUT = 25;   // same, when there are backup channels to switch to
 const STALL_WINDOW = 180e3;  // a second cut within this time grows the buffer
 const FILL_STUCK = 25;       // s without the buffer growing while refilling → reconnect
 const BACKUP_RECONNECTS = 2; // with backups: reconnects before switching source
 const LIVE_EDGE = 90;        // catch-up closer than this (s) to now → switch to live
+const FITS = [['cover', 'Zoom'], ['contain', 'Ajustar'], ['fill', 'Estirar']];   // picture framing, first = default
 
 export class Player {
   // getSettings() → { buffer, bufferMax } in seconds
@@ -44,6 +46,14 @@ export class Player {
     this.nextBtn.onclick = () => this.step(1);
     this.retryBtn.onclick = () => this.load();
     root.querySelector('#pFs').onclick = () => this.fullscreen();
+    this.zoomBtn = root.querySelector('#pZoom');
+    this.zoomBtn.onclick = () => {
+      const s = this.getSettings();
+      const i = FITS.findIndex(f => f[0] === s.fit);
+      s.fit = FITS[(i + 1) % FITS.length][0];
+      this.saveSettings?.();
+      this.applyFit();
+    };
     this.favBtn.onclick = () => {
       if (!this.fav) return;
       this.fav.toggle(this.current);
@@ -121,8 +131,16 @@ export class Player {
     this.resolve = resolve;
     this.fav = fav;
     this.root.hidden = false;
+    this.applyFit();
+    if (this.getSettings().autoFs !== false && !document.fullscreenElement) this.fullscreen();
     if (!this.pushed) { history.pushState({ player: 1 }, ''); this.pushed = true; }
     this.load();
+  }
+
+  applyFit() {
+    const f = FITS.find(f => f[0] === this.getSettings().fit) || FITS[0];
+    this.video.style.objectFit = f[0];
+    this.zoomBtn.textContent = f[1];
   }
 
   step(d) {
@@ -363,7 +381,7 @@ export class Player {
     this.retryBtn.textContent = 'Reintentar';
     this.status(status);
     this.retryBtn.hidden = true;
-    this.armTimer(LOAD_TIMEOUT);
+    this.armTimer(this.sources.length > 1 ? BACKUP_TIMEOUT : LOAD_TIMEOUT);
     const fail = () => { if (tok === this.token) this.failed(); };
     this.failNow = fail;
     const [engine, url] = this.attempts[i];

@@ -256,6 +256,43 @@ body.in-series #back { display: inline-block; }
 #player.idle #pCu { opacity: 0; pointer-events: none; }
 #cuLive { color: #ff6b6b; }
 
+/* Channel list over the live player (Left) */
+#zap {
+  position: absolute; top: 0; bottom: 0; left: 0; z-index: 4;
+  width: min(460px, 88vw);
+  display: flex; flex-direction: column;
+  background: rgb(13 15 19 / .9); border-right: 1px solid var(--line);
+  box-shadow: 8px 0 24px rgb(0 0 0 / .5);
+}
+.z-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 12px; border-bottom: 1px solid var(--line); }
+.z-head h3 { flex: 1; min-width: 0; margin: 0; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.z-head .txt { width: auto; padding: 0 12px; font-size: 15px; font-weight: 600; }
+#zList { flex: 1; height: auto; min-height: 0; }
+#zap .row { gap: 10px; padding-left: 10px; }
+#zap .logo { width: 48px; height: 48px; }
+.z-num { flex: none; min-width: 30px; text-align: right; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+#zap .meta.epg b { color: var(--accent); font-weight: 600; }
+
+/* Pilot footer (Up / Down): neighbouring channel, switch with OK */
+#pilot {
+  position: absolute; left: 16px; right: 16px; bottom: 16px; z-index: 3;
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 18px; border-radius: var(--radius);
+  background: rgb(0 0 0 / .62); backdrop-filter: blur(4px);
+  cursor: pointer;
+}
+#pilot .logo { width: 72px; height: 72px; }
+.pl-name { font-size: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-name .z-num { font-size: 18px; margin-right: 6px; }
+.pl-tag { margin-left: 10px; font-size: 13px; font-weight: 600; color: var(--accent); vertical-align: middle; }
+.pl-tag.here { color: #ff6b6b; }
+.pl-epg { margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-epg b, .pl-next b { color: var(--accent); font-weight: 600; }
+.pl-next { margin-top: 4px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#pilot .bar { max-width: 520px; }
+.pl-keys { flex: none; font-size: 13px; }
+@media (max-width: 760px), (pointer: coarse) { .pl-keys { display: none; } }
+
 /* Guide */
 .card.wide { width: min(760px, 100%); max-height: calc(100vh - 32px); }
 .g-head { display: flex; align-items: center; gap: 12px; }
