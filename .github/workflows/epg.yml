@@ -1,0 +1,27 @@
+# TV guide for the IPTV app (Movistar+, DAZN, TDT… from EPG_dobleM), once a day.
+# Published as epg.json on the "epg" branch, overwritten every day (no history, no repo growth);
+# the app reads it from raw.githubusercontent.com.
+name: Guía de TV
+on:
+  schedule:
+    - cron: '40 4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: epg
+jobs:
+  epg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/scripts/epg.py "$RUNNER_TEMP/epg.json"
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q --orphan epg-tmp
+          git rm -rq --cached .
+          git clean -fdq
+          cp "$RUNNER_TEMP/epg.json" epg.json
+          git add epg.json
+          git commit -qm "iptv: guía de TV"
+          git push -qf origin HEAD:epg
