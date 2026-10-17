@@ -219,6 +219,11 @@ body.in-series #back { display: inline-block; }
 #pInfo { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #pInfo b { color: var(--accent); font-weight: 600; }
 #pBuf { font-size: 13px; color: var(--dim); }
+@media (max-width: 760px) {
+  /* Portrait phone: the title and the buffer line take a row of their own, the buttons wrap below */
+  .pbar { flex-wrap: wrap; }
+  .pbar .ptext { order: -1; flex: 1 1 100%; }
+}
 #pBuf.low { color: var(--danger); }
 #pFav.on { color: var(--star); }
 .pbar .star { color: #fff; font-size: 26px; border: 1px solid rgb(255 255 255 / .15); background: rgb(0 0 0 / .4); }
