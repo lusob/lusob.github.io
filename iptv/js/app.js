@@ -1,15 +1,15 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017l';
-import * as store from './store.js?v=20261017l';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017l';
-import { Player } from './player.js?v=20261017l';
-import { Epg, hhmm } from './epg.js?v=20261017l';
-import { Mosaic } from './mosaic.js?v=20261017l';
-import { initRemote } from './remote.js?v=20261017l';
-import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017l';
-import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261017l';
-import { Zapper } from './zap.js?v=20261017l';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017m';
+import * as store from './store.js?v=20261017m';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017m';
+import { Player } from './player.js?v=20261017m';
+import { Epg, hhmm } from './epg.js?v=20261017m';
+import { Mosaic } from './mosaic.js?v=20261017m';
+import { initRemote } from './remote.js?v=20261017m';
+import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017m';
+import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261017m';
+import { Zapper } from './zap.js?v=20261017m';
 
-const VERSION = '2026-10-17l';
+const VERSION = '2026-10-17m';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');

@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017l';
+import { startEngine, resetVideo } from './engines.js?v=20261017m';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -33,7 +33,7 @@ export class Player {
     this.title = root.querySelector('#pTitle');
     this.bufEl = root.querySelector('#pBuf');
     // Live: show the cushion every second, and give back buffer after a long time without cuts.
-    setInterval(() => this.drawBuf(), 1000);
+    setInterval(() => { this.drawBuf(); this.frozen(); }, 1000);
     setInterval(() => this.relax(), 60e3);
     this.info = root.querySelector('#pInfo');
     this.msgEl = root.querySelector('#pMsg');
@@ -393,15 +393,16 @@ export class Player {
     v.pause();
     this.stopTicker();
     this.armTimer(FILL_STUCK);
-    let best = -1;
+    let best = -1, grewAt = Date.now();
     const t0 = Date.now();
     this.filling = setInterval(() => {
       if (tok !== this.token) return clearInterval(this.filling);
       const ahead = this.ahead();
-      if (ahead > best + 0.5) { best = ahead; this.armTimer(FILL_STUCK); }
+      if (ahead > best + 0.5) { best = ahead; grewAt = Date.now(); this.armTimer(FILL_STUCK); }
       this.msg(`${grown ? `Cortes frecuentes: buffer ampliado a ${target} s. ` : ''}Llenando buffer… ${Math.floor(Math.max(0, ahead))}/${target} s`);
       // VOD: the browser may stop downloading before reaching the target; don't wait forever.
-      if (ahead >= target || (!this.live && Date.now() - t0 > target * 1500 && ahead > 2)) {
+      // Live: the server may not keep that much behind the edge; once it stops growing, go on.
+      if (ahead >= target || (!this.live && Date.now() - t0 > target * 1500 && ahead > 2) || (Date.now() - grewAt > 6000 && ahead > 3)) {
         clearInterval(this.filling);
         this.filling = 0;
         this.play();
@@ -440,6 +441,40 @@ export class Player {
     this.bufEl.textContent = (this.live ? `Colchón ${a} s (objetivo ${this.eff} s)` : `Cargados ${a} s por delante`) + net +
       (slow ? (this.live ? ' · lento: prueba otra versión (⇄)' : ' · la red no da para este vídeo') : '');
     this.bufEl.classList.toggle('low', a < 3 || !!slow);
+  }
+
+  // Picture frozen with data in the buffer and no 'waiting' (a stuck decoder, a hole in one of
+  // the tracks, a timestamp jump in the stream): the clock stops while the buffer keeps growing.
+  // 3 s → small jump forward (or to the next buffered piece); 6 s → a bigger one; 9 s → reconnect.
+  frozen() {
+    const v = this.video;
+    if (v.seeking) return;
+    if (!this.isOpen || !this.played || this.filling || v.paused || v.ended) { this.frozenAt = null; return; }
+    const t = v.currentTime;
+    if (this.frozenAt == null || Math.abs(t - this.frozenT) > 0.05) { this.frozenAt = Date.now(); this.frozenT = t; this.frozenStep = 0; return; }
+    const s = (Date.now() - this.frozenAt) / 1000, b = v.buffered;
+    if (s < 3) return;
+    let next = null, end = 0;
+    for (let i = 0; i < b.length; i++) {
+      end = Math.max(end, b.end(i));
+      if (next == null && b.start(i) > t + 0.05) next = b.start(i);
+    }
+    if (end - t < 1) return;           // nothing to play: a real cut, handled by 'waiting'
+    if (s >= 9) {
+      this.frozenAt = null;
+      this.msg('La imagen se ha congelado: reconectando…');
+      return this.failNow?.();
+    }
+    const n = Math.floor(s / 3);           // 1: first try, 2: second
+    if (this.frozenStep === n) return;
+    this.frozenStep = n;
+    const step = n >= 2 ? 2 : 0.3;
+    const to = Math.min(end - 0.5, this.ahead() > 0.5 ? t + step : next ?? t + step);
+    console.warn('frozen', s, t, '→', to);
+    v.currentTime = to;
+    this.frozenT = v.currentTime;          // our own jump is not progress: keep counting
+    v.play?.().catch(() => {});
+    this.lastSeek = this.nudgedAt = Date.now();
   }
 
   ahead() {
@@ -571,6 +606,7 @@ export class Player {
 
   onWaiting() {
     if (!this.played || !this.isOpen || this.filling) return;
+    if (Date.now() - (this.nudgedAt || 0) < 2500) return;   // our own unfreezing jump (frozen())
     // Recordings, films: a jump is not a cut (no pause, no bigger buffer); keep playing as soon as
     // data arrives and reconnect at the same point only if nothing comes for a while.
     if (!this.live && (this.video.seeking || Date.now() - (this.lastSeek || 0) < 4000)) {
