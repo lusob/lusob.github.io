@@ -218,6 +218,8 @@ body.in-series #back { display: inline-block; }
 #pTitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #pInfo { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #pInfo b { color: var(--accent); font-weight: 600; }
+#pBuf { font-size: 13px; color: var(--dim); }
+#pBuf.low { color: var(--danger); }
 #pFav.on { color: var(--star); }
 .pbar .star { color: #fff; font-size: 26px; border: 1px solid rgb(255 255 255 / .15); background: rgb(0 0 0 / .4); }
 .pbar .txt { width: auto; padding: 0 14px; font-size: 16px; font-weight: 600; }

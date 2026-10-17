@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017f';
+import { startEngine, resetVideo } from './engines.js?v=20261017g';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -15,6 +15,7 @@ const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had starte
 const LOAD_TIMEOUT = 60;     // s without playback before an attempt is considered failed
 const BACKUP_TIMEOUT = 25;   // same, when there are backup channels to switch to
 const STALL_WINDOW = 180e3;  // a second cut within this time grows the buffer
+const RELAX_AFTER = 15 * 60e3; // ms of smooth live playback before the buffer shrinks again
 const VOD_STUCK = 30;        // s waiting in a recording / film → reconnect at the same point
 const FILL_STUCK = 25;       // s without the buffer growing while refilling → reconnect
 const BACKUP_RECONNECTS = 2; // with backups: reconnects before switching source
@@ -30,6 +31,10 @@ export class Player {
     this.getSettings = getSettings;
     this.video = root.querySelector('video');
     this.title = root.querySelector('#pTitle');
+    this.bufEl = root.querySelector('#pBuf');
+    // Live: show the cushion every second, and give back buffer after a long time without cuts.
+    setInterval(() => this.drawBuf(), 1000);
+    setInterval(() => this.relax(), 60e3);
     this.info = root.querySelector('#pInfo');
     this.msgEl = root.querySelector('#pMsg');
     this.retryBtn = root.querySelector('#pRetry');
@@ -142,6 +147,7 @@ export class Player {
     this.resolve = resolve;
     this.fav = fav;
     this.root.hidden = false;
+    this.openedAt = Date.now();
     this.applyFit();
     if (this.getSettings().autoFs !== false && !document.fullscreenElement) this.fullscreen(true);
     if (!this.pushed) { history.pushState({ player: 1 }, ''); this.pushed = true; }
@@ -345,7 +351,8 @@ export class Player {
     const s = this.getSettings();
     const base = Math.max(2, +s.buffer || 10);
     const max = Math.max(base, +s.bufferMax || 60);
-    if (this.eff == null || this.effBase !== base) { this.eff = base; this.effBase = base; }
+    // Starts with what earlier sessions learned (frequent cuts), not from scratch every time.
+    if (this.eff == null || this.effBase !== base) { this.eff = Math.max(base, Math.min(max, +s.bufLearned || 0)); this.effBase = base; }
     this.eff = Math.min(Math.max(this.eff, base), max);
     return { eff: this.eff, max };
   }
@@ -359,6 +366,7 @@ export class Player {
       this.eff = Math.min(max, Math.round(eff + Math.max(5, eff * 0.5)));
       this.engine?.setBuffer?.(this.eff);
       grown = true;
+      this.learn();
     }
     this.lastStall = now;
     const target = this.eff;
@@ -382,6 +390,33 @@ export class Player {
         this.play();
       }
     }, 500);
+  }
+
+  learn() {
+    this.getSettings().bufLearned = this.eff;
+    this.saveSettings?.();
+  }
+
+  // 15 min without cuts: 20 % less buffer (less delay), never below the setting.
+  relax() {
+    if (!this.isOpen || !this.live || !this.played || this.filling) return;
+    const { eff } = this.buffer();
+    const base = this.effBase, now = Date.now();
+    const calm = now - Math.max(this.lastStall || 0, this.lastRelax || 0, this.openedAt || 0);
+    if (eff <= base || calm < RELAX_AFTER) return;
+    this.eff = Math.max(base, Math.round(eff * 0.8));
+    this.lastRelax = now;
+    this.engine?.setBuffer?.(this.eff);
+    this.learn();
+  }
+
+  drawBuf() {
+    const show = this.isOpen && this.live && !this.cu && this.played;
+    this.bufEl.hidden = !show;
+    if (!show) return;
+    const a = Math.max(0, Math.floor(this.ahead()));
+    this.bufEl.textContent = `Colchón ${a} s · objetivo ${this.eff} s${this.eff > this.effBase ? ' (ampliado por cortes)' : ''}`;
+    this.bufEl.classList.toggle('low', a < 3);
   }
 
   ahead() {
@@ -413,7 +448,7 @@ export class Player {
       buffer: eff,
       resumeAt: this.resumeAt,
       fromStart: this.fromStart,
-      prebuffer: this.live && engine === 'mpegts' ? Math.min(eff, 10) : 0,
+      prebuffer: this.live && engine === 'mpegts' ? Math.min(eff, 20) : 0,   // raw TS: the cushion is built in real time
       onStatus: t => { if (tok === this.token) { this.stopTicker(); this.msg(t); } },
       onTracks: () => { if (tok === this.token) this.updateTracks(); },
       onBlocked: () => { if (tok === this.token) this.blockedPlay(); },

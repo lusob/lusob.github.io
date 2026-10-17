@@ -1,15 +1,15 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017f';
-import * as store from './store.js?v=20261017f';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017f';
-import { Player } from './player.js?v=20261017f';
-import { Epg, hhmm } from './epg.js?v=20261017f';
-import { Mosaic } from './mosaic.js?v=20261017f';
-import { initRemote } from './remote.js?v=20261017f';
-import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017f';
-import { Agenda, eventRow, channelVariants, NOW as AG_NOW, MINE as AG_MINE, DAY as AG_DAY } from './agenda.js?v=20261017f';
-import { Zapper } from './zap.js?v=20261017f';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017g';
+import * as store from './store.js?v=20261017g';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017g';
+import { Player } from './player.js?v=20261017g';
+import { Epg, hhmm } from './epg.js?v=20261017g';
+import { Mosaic } from './mosaic.js?v=20261017g';
+import { initRemote } from './remote.js?v=20261017g';
+import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017g';
+import { Agenda, eventRow, channelVariants, NOW as AG_NOW, MINE as AG_MINE, DAY as AG_DAY } from './agenda.js?v=20261017g';
+import { Zapper } from './zap.js?v=20261017g';
 
-const VERSION = '2026-10-17f';
+const VERSION = '2026-10-17g';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -1801,6 +1801,7 @@ $('#settings').addEventListener('close', async () => {
   if (v === 'save') {
     settings.buffer = +$('#bufferInput').value;
     settings.bufferMax = Math.max(settings.buffer, +$('#bufferMaxInput').value);
+    delete settings.bufLearned;   // chosen by hand: start again from it
     settings.scan = +$('#scanInput').value;
     settings.epg = $('#epgInput').checked;
     settings.autoFs = $('#autoFsInput').checked;
