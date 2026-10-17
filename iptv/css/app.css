@@ -399,3 +399,42 @@ body.kbd :focus, dialog :focus-visible, #player :focus-visible { outline: 3px so
   .ag-team { max-width: 100%; }
 }
 #mineCount:not(:empty) { margin-left: 6px; opacity: .8; font-weight: 400; }
+/* Search: programmes found in the guide */
+.row.prog .name { font-weight: 600; }
+.row.prog .meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-tag { color: #fff; background: var(--danger); font-size: .7em; letter-spacing: .04em; padding: 2px 5px; border-radius: 5px; margin-right: 2px; }
+.g-row.hit { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ---------- Horizontal guide of a folder ---------- */
+#gridBtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+#gridBtn { width: auto; padding: 0 14px; font-size: 16px; white-space: nowrap; }
+#grid { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-padding: 40px 0 0 236px; }
+.g-wrap { position: relative; }
+.g-head { position: sticky; top: 0; z-index: 3; display: flex; height: 34px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.g-corner { position: sticky; left: 0; z-index: 4; width: 230px; flex: none; background: var(--panel); border-right: 1px solid var(--line); padding: 8px 12px; font-size: 13px; color: var(--dim); }
+.g-ruler { position: relative; flex: none; }
+.g-tick { position: absolute; top: 0; bottom: 0; padding: 8px 6px; font-size: 13px; color: var(--dim); border-left: 1px solid var(--line); white-space: nowrap; }
+.g-line { display: flex; height: 60px; border-bottom: 1px solid var(--line); }
+.gcell { all: unset; box-sizing: border-box; cursor: pointer; }
+.gcell.gch { position: sticky; left: 0; z-index: 2; width: 230px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 10px; background: var(--panel); border-right: 1px solid var(--line); }
+.gcell.gch .logo { width: 40px; height: 40px; flex: none; font-size: 13px; }
+.g-name { font-size: 14px; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; }
+.g-track { position: relative; flex: none; }
+.g-track .gcell { position: absolute; top: 4px; bottom: 4px; display: flex; flex-direction: column; justify-content: center; padding: 0 8px; overflow: hidden;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+.g-track .gcell.on { background: #1d2c44; border-color: #34507c; }
+.g-track .gcell.past { opacity: .5; }
+.g-track .gcell.none { color: var(--dim); font-style: italic; background: transparent; border-style: dashed; }
+.g-pt { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-pm { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; }
+.gcell:hover { filter: brightness(1.25); }
+.gcell.kfocus { outline: 3px solid #fff; outline-offset: -3px; z-index: 1; }
+.gcell.gch.kfocus { z-index: 3; }
+.g-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); z-index: 1; pointer-events: none; }
+.g-more { padding: 12px; color: var(--dim); position: sticky; left: 0; }
+@media (max-width: 760px) {
+  #grid { scroll-padding-left: 126px; }
+  .g-corner, .gcell.gch { width: 120px; }
+  .gcell.gch .logo { display: none; }
+  .g-name { font-size: 13px; }
+}

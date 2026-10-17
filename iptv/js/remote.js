@@ -15,7 +15,9 @@ export function initRemote(ctx) {
   let act = -1;   // items zone: -1 = the row itself, otherwise index of its action button
 
   const topButtons = () => [...document.querySelectorAll('.top button, .top input, .pane-head button')].filter(shown);
-  const mode = () => !ctx.seriesEl.hidden ? 'series' : !ctx.mosaicEl.hidden ? 'mosaic' : 'list';
+  // The horizontal guide moves like the mosaic (its cells are the tiles).
+  const mode = () => !ctx.seriesEl.hidden ? 'series' : !ctx.mosaicEl.hidden || !ctx.gridEl?.hidden ? 'mosaic' : 'list';
+  const tileBox = () => !ctx.gridEl?.hidden ? [ctx.gridEl, '.gcell'] : [ctx.mosaicEl, '.tile'];
 
   function setZone(z) {
     zone = z;
@@ -31,7 +33,7 @@ export function initRemote(ctx) {
     act = -1;
     const m = mode();
     if (m === 'list') itemList.setCursor(itemList.cursor ?? 0, true);
-    else if (m === 'mosaic') focusTile(curTile() || tiles()[0]);
+    else if (m === 'mosaic') focusTile(curTile() || (!ctx.gridEl?.hidden && ctx.gridEl.querySelector('.gcell.on')) || tiles()[0]);
     else (ctx.seriesEl.querySelector('.ep') || ctx.seriesEl.querySelector('.chips button, [data-retry]'))?.focus();
   }
 
@@ -45,14 +47,14 @@ export function initRemote(ctx) {
   itemList.onUpdate = () => paintAct();
 
   // ---- mosaic tiles (geometric navigation)
-  const tiles = () => [...ctx.mosaicEl.querySelectorAll('.tile')].filter(t => t.offsetParent !== null);
-  const curTile = () => ctx.mosaicEl.querySelector('.tile.kfocus');
-  function clearTile() { curTile()?.classList.remove('kfocus'); }
+  const tiles = () => { const [el, sel] = tileBox(); return [...el.querySelectorAll(sel)].filter(t => t.offsetParent !== null); };
+  const curTile = () => { const [el, sel] = tileBox(); return el.querySelector(sel + '.kfocus'); };
+  function clearTile() { document.querySelectorAll('.tile.kfocus, .gcell.kfocus').forEach(t => t.classList.remove('kfocus')); }
   function focusTile(t) {
     if (!t) return;
     clearTile();
     t.classList.add('kfocus');
-    t.scrollIntoView({ block: 'nearest' });
+    t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   function moveTile(dx, dy) {
     const c = curTile();

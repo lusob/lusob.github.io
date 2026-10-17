@@ -1,15 +1,16 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017o';
-import * as store from './store.js?v=20261017o';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017o';
-import { Player } from './player.js?v=20261017o';
-import { Epg, hhmm } from './epg.js?v=20261017o';
-import { Mosaic } from './mosaic.js?v=20261017o';
-import { initRemote } from './remote.js?v=20261017o';
-import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017o';
-import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261017o';
-import { Zapper } from './zap.js?v=20261017o';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018a';
+import * as store from './store.js?v=20261018a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018a';
+import { Player } from './player.js?v=20261018a';
+import { Epg, hhmm } from './epg.js?v=20261018a';
+import { Grid } from './grid.js?v=20261018a';
+import { Mosaic } from './mosaic.js?v=20261018a';
+import { initRemote } from './remote.js?v=20261018a';
+import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018a';
+import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261018a';
+import { Zapper } from './zap.js?v=20261018a';
 
-const VERSION = '2026-10-17o';
+const VERSION = '2026-10-18a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -28,6 +29,7 @@ let list = [];                 // items currently shown in the right pane
 let series = null;             // open series: { item, eps, seasons, season }
 let unlocked = false;          // adult content visible (this page load only)
 let mosaicOn = false;
+let gridOn = false;   // horizontal guide of the folder instead of the list
 let playerKind = '';           // 'live' | 'vod' | 'series'
 const seriesCache = new Map();
 const ui = Object.assign({ tab: 'live', folder: {} }, store.get('ui', {}));
@@ -64,9 +66,17 @@ const zap = new Zapper({
   play: async (items, i, title, folderId) => { if (await confirmBusy()) openLive(items, i, title, folderId); },
 });
 
+const grid = new Grid($('#grid'), {
+  guide: it => epg?.byName(it.name) || epg?.cache.get(it.id)?.list || null,
+  wantEpg: items => { if (settings.epg) epg?.want(items.map(i => i.id)); },
+  play: (items, i) => confirmBusy().then(ok => { if (ok) openLive(items, i, $('#listTitle').textContent, query ? null : ui.folder.live); }),
+  later: (it, p) => openGuide(it, p.start),
+});
+
 const remote = initRemote({
   folderList, itemList, player, zap,
   mosaicEl: $('#mosaic'),
+  gridEl: $('#grid'),
   seriesEl: $('#series'),
   openFolder: i => onFolderClick(folderList.items[i], i, null),
   openItem: (i, act) => onItemClick(itemList.items[i], i, act),
@@ -691,6 +701,7 @@ function refreshAgenda(resetScroll) {
   $('#mineCount').textContent = hidden > 0 ? `${ui.agendaAll ? '−' : '+'}${hidden}` : '';
   $('#items').hidden = false;
   $('#mosaic').hidden = true;
+  $('#grid').hidden = true;
   itemList.set(list, resetScroll);
   if (resetScroll) {
     // A day: start at what is on now
@@ -731,12 +742,15 @@ async function selectTab(type) {
   mosaic.hide();
   mosaic.source = null;
   $('#mosaicBtn').hidden = type !== 'live';
+  $('#gridBtn').hidden = type !== 'live';
+  if (type !== 'live') $('#grid').hidden = true;
   $('#mineBtn').hidden = type !== 'agenda';
   if (type === 'agenda') return selectAgenda();
   if (!data[type]) {
     folderList.set([]);
     itemList.set([]);
     $('#mosaic').hidden = true;
+    $('#grid').hidden = true;
     $('#items').hidden = false;
     $('#listTitle').textContent = '';
     $('#listCount').textContent = '';
@@ -833,6 +847,11 @@ function refreshItems(resetScroll) {
   if (query) {
     const q = norm(query);
     list = all.filter(i => i.key.includes(q));
+    // Live: also the programmes with that title in the guide (on now or later).
+    if (ui.tab === 'live' && settings.epg && epg) {
+      if (!epg.pub) epg.guides().then(() => { if (query && norm(query) === q && ui.tab === 'live') refreshItems(false); });
+      list = list.concat(epg.search(q, all, norm).map(({ item, prog }) => ({ ...item, prog, base: item })));
+    }
     title = `“${query}”`;
   } else if (id === FAV) {
     list = all.filter(i => favs[ui.tab].items.has(i.id));
@@ -857,12 +876,22 @@ function refreshItems(resetScroll) {
   }
   $('#itemsPane').classList.toggle('poster', ui.tab !== 'live');
 
-  const useMosaic = mosaicOn && ui.tab === 'live' && !series && !(id === REC && !query);
+  const views = ui.tab === 'live' && !series && !(id === REC && !query);
+  const useGrid = gridOn && views;
+  const useMosaic = mosaicOn && views && !useGrid;
   $('#mosaicBtn').classList.toggle('on', useMosaic);
+  $('#gridBtn').classList.toggle('on', useGrid);
   $('#deadBtn').hidden = !useMosaic;
-  $('#items').hidden = useMosaic || !!series;
+  $('#items').hidden = useMosaic || useGrid || !!series;
   $('#mosaic').hidden = !useMosaic;
-  if (useMosaic) {
+  $('#grid').hidden = !useGrid;
+  if (useGrid) {
+    mosaic.hide();
+    mosaic.source = null;
+    itemList.set(list, resetScroll);
+    grid.show(list.filter(it => !it.prog));
+    if (!epg?.pub && settings.epg) epg?.guides().then(() => grid.refresh());
+  } else if (useMosaic) {
     if (mosaic.source !== list) { mosaic.source = list; mosaic.show(list); }
   } else {
     mosaic.hide();
@@ -918,8 +947,22 @@ function epgNow(it) {
   return settings.epg && epg ? epg.get(it.id)?.now : null;
 }
 
+// A programme found by the search: its title, the channel and when.
+function renderProgRow(it) {
+  const p = it.prog, now = Date.now() / 1000, on = p.start <= now;
+  const when = on ? `<b class="live-tag">EN DIRECTO</b> hasta ${hhmm(p.end)}` : `${esc(dayLabel(p.start))} ${hhmm(p.start)}–${hhmm(p.end)}`;
+  return `<div class="row prog${on ? ' on' : ''}">
+    <div class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
+    <div class="grow"><div class="name">${esc(p.title)}</div>
+      <div class="meta">🗓 ${when} · ${esc(it.name)}</div>
+      ${on ? `<div class="bar"><i style="width:${Math.round((now - p.start) / (p.end - p.start) * 100)}%"></i></div>` : ''}</div>
+    <button class="star gbtn" data-act="guide" aria-label="Guía">≡</button>
+  </div>`;
+}
+
 function renderItemRow(it) {
   if (it.rec) return renderRecRow(it);
+  if (it.prog) return renderProgRow(it);
   if (it.ev) return eventRow(it, eventChannels(it), !String(ui.folder.agenda || '').startsWith(AG_DAY) || !!query);
   const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL;
   const meta = [!it.versions && showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
@@ -946,6 +989,11 @@ function renderItemRow(it) {
 function onItemClick(it, i, act) {
   if (it.rec) return onRecClick(it, act);
   if (it.ev) return playEvent(it, act);
+  // A programme from the search: on now → watch its channel; later → its guide (to record it).
+  if (it.prog) {
+    if (act === 'guide' || it.prog.start > Date.now() / 1000) return openGuide(it.base, it.prog.start);
+    return confirmBusy().then(ok => { if (ok) openLive([it.base], 0, it.prog.title, null); });
+  }
   if (act === 'guide') return openGuide(it);
   if (act === 'fav') {
     toggle(favs[ui.tab].items, it.id);
@@ -1047,7 +1095,9 @@ function scheduleEpg() {
   epgTimer = setTimeout(() => epg.want(itemList.visibleItems().map(i => i.id)), 300);
 }
 
+let gridTimer;
 function onEpg(id) {
+  if (!$('#grid').hidden && !gridTimer) gridTimer = setTimeout(() => { gridTimer = 0; grid.refresh(); }, 1500);
   if (ui.tab === 'live') itemList.updateWhere(it => it.id === id);
   const it = data.live?.byId.get(id);
   if (it && !$('#mosaic').hidden) mosaic.refreshInfo(it);
@@ -1173,10 +1223,11 @@ function dayLabel(sec) {
 // ---- guide
 
 const tableCache = new Map();   // channel id → { list, ts }
-let guideCh = null;
+let guideCh = null, guideAt = null;   // guideAt: start (unix s) of a programme to show first
 
-async function openGuide(ch) {
+async function openGuide(ch, at = null) {
   guideCh = ch;
+  guideAt = at;
   const dlg = $('#guide');
   $('#gTitle').textContent = ch.name;
   const chans = [ch, ...backupsOf(ch.id)];
@@ -1266,7 +1317,9 @@ function renderGuide(ch, list) {
       renderGuide(ch, list);
     }
   };
-  const cur = body.querySelector('.g-row.now') || body.querySelector('.g-row:not(.past)');
+  const at = guideAt != null ? progs.findIndex(p => p.start === guideAt) : -1;
+  if (at >= 0) body.querySelector(`.g-row[data-i="${at}"]`).classList.add('hit');
+  const cur = body.querySelector('.g-row.hit') || body.querySelector('.g-row.now') || body.querySelector('.g-row:not(.past)');
   if (cur) body.scrollTop = Math.max(0, cur.offsetTop - body.offsetTop - 60);
 }
 
@@ -1638,8 +1691,16 @@ $('#mineBtn').addEventListener('click', () => {
   refreshItems(true);
 });
 
+$('#gridBtn').addEventListener('click', () => {
+  gridOn = !gridOn;
+  if (gridOn) mosaicOn = false;
+  closeSeries();
+  refreshItems(true);
+});
+
 $('#mosaicBtn').addEventListener('click', () => {
   mosaicOn = !mosaicOn;
+  if (mosaicOn) gridOn = false;
   closeSeries();
   refreshItems(true);
 });
@@ -1656,6 +1717,7 @@ async function openSeries(it) {
   document.body.classList.add('in-series');
   $('#items').hidden = true;
   $('#mosaic').hidden = true;
+  $('#grid').hidden = true;
   $('#empty').hidden = true;
   $('#listTitle').textContent = it.name;
   $('#listCount').textContent = '';

@@ -2,7 +2,7 @@
 // folders (now & next, days, sports) and a chronological list. Each event's channels are matched
 // with the live list so a press plays the broadcast.
 
-import { esc } from './ui.js?v=20261017o';
+import { esc } from './ui.js?v=20261018a';
 
 export const NOW = 'ag:now', DAY = 'ag:day:', SPORT = 'ag:sport:', MINE = 'ag:mine';
 

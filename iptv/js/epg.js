@@ -4,7 +4,7 @@
 //  3. get_short_epg per channel, fetched lazily for what is on screen
 //     (few concurrent requests, newest request wins, cached until the current programme ends).
 
-import { channelKey, isForeign } from './backups.js?v=20261017o';
+import { channelKey, isForeign } from './backups.js?v=20261018a';
 
 const CONCURRENCY = 3;
 // Daily by .github/workflows/epg.yml in lusob.github.io (tools/epg.py), on a branch of its own.
@@ -74,6 +74,27 @@ export class Epg {
     if (!name) return null;
     const k = channelKey(name);
     return (!isForeign(name) && this.pub?.get(k)) || this.prov?.get(k) || null;
+  }
+
+  // Programmes on now or later whose title contains q (already normalised), one channel per
+  // guide (the best version among `items`), soonest first: [{ item, prog }].
+  search(q, items, norm, max = 300) {
+    if (!this.pub || q.length < 3) return [];
+    this.names ||= new Map();
+    const best = new Map();   // guide → item
+    const score = n => (/\bsd\b/i.test(n) ? 0 : 2) + (/\bfhd\b|\bhd\b/i.test(n) ? 1 : 0);
+    for (const it of items) {
+      let l = this.names.get(it.name);
+      if (l === undefined) this.names.set(it.name, l = this.byName(it.name));
+      if (!l) continue;
+      const cur = best.get(l);
+      if (!cur || score(it.name) > score(cur.name)) best.set(l, it);
+    }
+    const now = Date.now() / 1000, out = [];
+    for (const [l, item] of best) {
+      for (const p of l) if (p.end > now && (p.k ??= norm(p.title)).includes(q)) out.push({ item, prog: p });
+    }
+    return out.sort((a, b) => a.prog.start - b.prog.start).slice(0, max);
   }
 
   async listFor(name) {
