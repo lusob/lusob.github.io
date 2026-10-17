@@ -95,6 +95,10 @@ const FOREIGN = /┃(?!es┃)[a-z]{2}┃|^\s*(?!es\b|esp\b)[a-z]{2,3}\s*[:|]|^\s
 const SPANISH = /┃es┃|^\s*esp?\s*[:|]|\(es\)|\bspain\b|\[esp\]|\besp-\d|\bespana\b|\besp\b/;
 const BRANDED = /\bm\s?\+|\bm\.\s|\bmovistar\b|\bdazn\b|^\W*vamos\b|\bliga\s+(de\s+)?campeones\b/;
 
+// Versions of a channel called `name` among `items` (newest first, SD last).
+export const findChannels = (name, items) => index(items).get(channelKey(name)) || [];
+export const isForeign = name => FOREIGN.test(lower(name));
+
 function isSpanishSport(it, folder) {
   const n = lower(it.name), f = lower(folder);
   if (FOREIGN.test(n) || /24\s*\/\s*7/.test(n)) return false;

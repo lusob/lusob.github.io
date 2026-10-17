@@ -1,0 +1,20 @@
+# Sports agenda for the IPTV app (iptv/agenda.json), from futbolenlatv.es once a day.
+name: Agenda deportiva
+on:
+  schedule:
+    - cron: '15 4 * * *'   # 06:15 in Madrid (summer time)
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: agenda
+jobs:
+  agenda:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/scripts/agenda.py iptv/agenda.json
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add iptv/agenda.json
+          git diff --cached --quiet || { git commit -m "iptv: agenda deportiva"; git pull --rebase -q; git push; }

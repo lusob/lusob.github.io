@@ -354,3 +354,36 @@ body.kbd :focus, dialog :focus-visible, #player :focus-visible { outline: 3px so
 }
 .row .name .from { font-weight: 400; color: var(--muted, #9aa); font-size: .85em; }
 .row.child { padding-left: 2.2rem; }
+
+/* Sports agenda */
+.row.ag { gap: 14px; }
+.row.ag.over { opacity: .45; }
+.row.ag.live { box-shadow: inset 4px 0 0 var(--danger); }
+.ag-time { width: 64px; flex: none; display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.ag-time b { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.ag-time small { color: var(--muted); font-size: .75rem; }
+.ag-live { color: #fff; background: var(--danger); font-size: .62rem !important; letter-spacing: .04em; padding: 3px 5px; border-radius: 5px; animation: agPulse 2s infinite; }
+@keyframes agPulse { 50% { opacity: .6; } }
+.ag-icon { font-size: 1.6rem; width: 34px; flex: none; text-align: center; }
+.ag-comp { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ag-title { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.ag-team { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ag-vs { color: var(--muted); flex: none; }
+.ag-chans { display: flex; gap: 6px; flex: none; max-width: 46%; overflow: hidden; }
+.ag-chans .chip { font-size: .8rem; padding: 6px 10px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--line); background: var(--panel-2); color: var(--dim); }
+.ag-chans .chip.on { background: #17351f; border-color: #2a6b3a; color: #b8f5c8; font-weight: 600; cursor: pointer; }
+.ag-chans .chip.off { opacity: .6; }
+.ag-chans .chip.on.kact { outline: 3px solid var(--accent); outline-offset: 1px; }
+.ag-chans .chip { min-height: 0; min-width: 0; height: auto; line-height: 1.2; }
+@media (max-width: 760px) {
+  .row.ag { gap: 10px; }
+  .ag-chans { max-width: 34%; flex-direction: column; gap: 4px; align-items: flex-end; }
+  .ag-chans .chip { padding: 4px 9px; font-size: .74rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .ag-chans .chip.off, .ag-chans .chip.more, .ag-chans .chip:nth-child(n+3) { display: none; }
+  .ag-icon { display: none; }
+  .ag-time { width: 48px; }
+  .ag-comp { font-size: .72rem; }
+  .ag-title { flex-direction: column; gap: 0; font-size: .92rem; line-height: 1.2; }
+  .ag-vs { display: none; }
+  .ag-team { max-width: 100%; }
+}

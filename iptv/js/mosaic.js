@@ -4,8 +4,8 @@
 // they shrink to a comfortable minimum and the grid scrolls; tiles on screen are scanned first.
 // Channels without signal can be hidden.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017d';
-import { esc, initials } from './ui.js?v=20261017d';
+import { startEngine, resetVideo } from './engines.js?v=20261017e';
+import { esc, initials } from './ui.js?v=20261017e';
 
 const LOAD_TIMEOUT = 20;     // s to get a picture before marking the channel as "no signal"
 const GAP = 600;             // ms between streams so the server frees the connection

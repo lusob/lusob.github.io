@@ -1,14 +1,15 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017d';
-import * as store from './store.js?v=20261017d';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017d';
-import { Player } from './player.js?v=20261017d';
-import { Epg, hhmm } from './epg.js?v=20261017d';
-import { Mosaic } from './mosaic.js?v=20261017d';
-import { initRemote } from './remote.js?v=20261017d';
-import { autoBackups, sportsChannels, SPORTS } from './backups.js?v=20261017d';
-import { Zapper } from './zap.js?v=20261017d';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017e';
+import * as store from './store.js?v=20261017e';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017e';
+import { Player } from './player.js?v=20261017e';
+import { Epg, hhmm } from './epg.js?v=20261017e';
+import { Mosaic } from './mosaic.js?v=20261017e';
+import { initRemote } from './remote.js?v=20261017e';
+import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017e';
+import { Agenda, eventRow, cleanChannel, NOW as AG_NOW, MINE as AG_MINE, DAY as AG_DAY } from './agenda.js?v=20261017e';
+import { Zapper } from './zap.js?v=20261017e';
 
-const VERSION = '2026-10-17d';
+const VERSION = '2026-10-17e';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -146,7 +147,7 @@ function startSession(creds, info = null) {
   loadFavs();
   showView('main');
   if (!info) api.login().catch(() => {});
-  selectTab(ui.tab in TYPES ? ui.tab : 'live');
+  selectTab(ui.tab in TYPES || ui.tab === 'agenda' ? ui.tab : 'live');
 }
 
 function logout() {
@@ -568,6 +569,109 @@ function sportList(id) {
   return { list: s.groups.get(sp?.[0]) || [], title: sp ? `M+/DAZN · ${sp[1]}` : '' };
 }
 
+// ---------------------------------------------------------------- sports agenda
+
+const agenda = new Agenda();
+const eventChanCache = new Map();
+
+// Channels of an event, with the live channel that plays each (null when not in the list); playable first.
+function eventChannels(e) {
+  const items = data.live?.items;
+  const tag = items ? items.length : 0;
+  const hit = eventChanCache.get(e.id);
+  if (hit?.tag === tag) return hit.chans;
+  const seen = new Set();
+  const chans = e.channels.map(name => ({ name: name.replace(/\s*\([^)]*\)/g, ''), item: items ? channelFor(name) : null }))
+    .filter(c => !c.item || (!seen.has(c.item.id) && seen.add(c.item.id)));   // "M+ LALIGA" and "M+ LALIGA HDR": one channel here
+  chans.sort((a, b) => !!b.item - !!a.item);
+  eventChanCache.set(e.id, { tag, chans });
+  return chans;
+}
+
+// Best live channel for a TV channel name of the agenda: Spanish M+/DAZN versions first, then any non-foreign one.
+function channelFor(name) {
+  const d = data.live, s = sports();
+  const vis = new Set(visItems(d));
+  const all = findChannels(cleanChannel(name), d.items).filter(it => vis.has(it));
+  return all.find(it => s.alts.has(it.id)) || all.find(it => !isForeign(it.name)) || null;
+}
+
+const agendaEvents = () => ui.agendaAll ? agenda.events : agenda.events.filter(e => eventChannels(e).some(c => c.item));
+
+async function selectAgenda() {
+  $('#deadBtn').hidden = true;
+  $('#itemsPane').classList.remove('poster');
+  if (!agenda.events.length) {
+    folderList.set([]);
+    itemList.set([]);
+    $('#listTitle').textContent = 'Agenda';
+    $('#listCount').textContent = '';
+    $('#empty').hidden = false;
+    $('#emptyText').innerHTML = '<span class="spinner small"></span>Cargando la agenda deportiva…';
+    $('#emptyDiag').textContent = '';
+    $('#emptyRetry').hidden = true;
+  }
+  await Promise.all([agenda.load(), ensureData('live').catch(() => {})]);
+  if (ui.tab !== 'agenda') return;
+  renderFolders(false);
+  refreshItems(true);
+}
+
+function renderAgendaFolders(keepScroll) {
+  const rows = agenda.folders(agendaEvents());
+  rows.push({ id: AG_MINE, toggle: true, name: ui.agendaAll ? '☐ Solo lo que está en mi lista' : '☑ Solo lo que está en mi lista' });
+  folderList.set(rows, !keepScroll);
+}
+
+function agendaFolderRow(f) {
+  if (f.toggle) {
+    return `<div class="row lock"><div class="grow"><div class="name">${esc(f.name)}</div>
+      <div class="meta">${ui.agendaAll ? 'Mostrando todos los eventos' : 'Ocultando los que no se pueden ver aquí'}</div></div></div>`;
+  }
+  const active = (ui.folder.agenda || AG_NOW) === f.id && !query;
+  return `<div class="row${active ? ' active' : ''}"><div class="grow"><div class="name">${esc(f.name)}</div>
+    <div class="meta">${[`${f.count} ${f.count === 1 ? 'evento' : 'eventos'}`, f.extra].filter(Boolean).join(' · ')}</div></div></div>`;
+}
+
+function refreshAgenda(resetScroll) {
+  const evs = agendaEvents();
+  let id = ui.folder.agenda || AG_NOW;
+  if (id !== AG_NOW && !folderList.items.some(f => f.id === id)) id = ui.folder.agenda = AG_NOW;
+  const r = agenda.list(evs, id, query);
+  list = r.list;
+  $('#listTitle').textContent = r.title;
+  $('#listCount').textContent = list.length || '';
+  $('#items').hidden = false;
+  $('#mosaic').hidden = true;
+  itemList.set(list, resetScroll);
+  if (resetScroll) {
+    // A day: start at what is on now
+    const now = Date.now() / 1000;
+    const i = Math.max(0, list.findIndex(e => e.end > now));
+    itemList.el.scrollTop = i * itemList.rowH;
+    itemList.cursor = i;
+    remote.reset();
+    itemList.cursor = i;
+  }
+  const when = agenda.updated ? new Date(agenda.updated * 1000).toLocaleString('es-ES', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) : '';
+  $('#empty').hidden = !!list.length;
+  $('#emptyText').textContent = agenda.error ? `No se pudo cargar la agenda: ${agenda.error}`
+    : query ? 'Sin resultados' : !agenda.events.length ? 'La agenda está vacía' : ui.agendaAll ? 'No hay eventos' : 'No hay eventos en los canales de tu lista. Desmarca «Solo lo que está en mi lista» para verlos todos.';
+  $('#emptyDiag').textContent = when ? `Agenda de futbolenlatv.es, actualizada el ${when}` : '';
+  $('#emptyRetry').hidden = !agenda.error;
+  retryAction = reload;
+}
+
+function playEvent(e, act) {
+  const chans = eventChannels(e).filter(c => c.item);
+  const n = act?.startsWith('ch:') ? +act.slice(3) : 0;
+  const c = eventChannels(e)[n]?.item ? eventChannels(e)[n] : chans[0];
+  if (!c) return toast('Ninguno de sus canales está en tu lista', 3000);
+  // The queue: every playable channel of the event (Up / Down switches between them)
+  const items = chans.map(x => x.item);
+  confirmBusy().then(ok => { if (ok) openLive(items, Math.max(0, items.indexOf(c.item)), e.home ? `${e.home} – ${e.away}` : e.title, null); });
+}
+
 // ---------------------------------------------------------------- tabs & folders
 
 async function selectTab(type) {
@@ -578,6 +682,7 @@ async function selectTab(type) {
   mosaic.hide();
   mosaic.source = null;
   $('#mosaicBtn').hidden = type !== 'live';
+  if (type === 'agenda') return selectAgenda();
   if (!data[type]) {
     folderList.set([]);
     itemList.set([]);
@@ -597,6 +702,7 @@ async function selectTab(type) {
 }
 
 function renderFolders(keepScroll = true) {
+  if (ui.tab === 'agenda') return renderAgendaFolders(keepScroll);
   const d = data[ui.tab];
   if (!d) return;
   const fc = favs[ui.tab].cats;
@@ -620,6 +726,7 @@ function renderFolders(keepScroll = true) {
 }
 
 function renderFolderRow(f) {
+  if (ui.tab === 'agenda') return agendaFolderRow(f);
   if (f.lock) {
     return `<div class="row lock"><div class="grow"><div class="name">${esc(f.name)}</div>
       <div class="meta">${unlocked ? 'Visible hasta que recargues la página' : 'Oculto · requiere PIN'}</div></div></div>`;
@@ -639,6 +746,13 @@ function renderFolderRow(f) {
 }
 
 async function onFolderClick(f, i, act) {
+  if (f.toggle) {
+    ui.agendaAll = !ui.agendaAll;
+    saveUi();
+    renderFolders();
+    refreshItems(true);
+    return;
+  }
   if (f.lock) {
     if (unlocked) setLocked(true);
     else if (await unlock()) setLocked(false);
@@ -667,6 +781,7 @@ async function onFolderClick(f, i, act) {
 // ---------------------------------------------------------------- items
 
 function refreshItems(resetScroll) {
+  if (ui.tab === 'agenda') return refreshAgenda(resetScroll);
   const d = data[ui.tab];
   if (!d) return;
   const id = ui.folder[ui.tab] || ALL;
@@ -762,6 +877,7 @@ function epgNow(it) {
 
 function renderItemRow(it) {
   if (it.rec) return renderRecRow(it);
+  if (it.ev) return eventRow(it, eventChannels(it), !String(ui.folder.agenda || '').startsWith(AG_DAY) || !!query);
   const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL;
   const meta = [!it.versions && showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
   let sub = `<div class="meta">${meta}</div>`;
@@ -786,6 +902,7 @@ function renderItemRow(it) {
 
 function onItemClick(it, i, act) {
   if (it.rec) return onRecClick(it, act);
+  if (it.ev) return playEvent(it, act);
   if (act === 'guide') return openGuide(it);
   if (act === 'fav') {
     toggle(favs[ui.tab].items, it.id);
@@ -1569,7 +1686,7 @@ let searchTimer;
 $('#search').addEventListener('input', e => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    if (!data[ui.tab]) return;
+    if (!data[ui.tab] && ui.tab !== 'agenda') return;
     query = e.target.value.trim();
     closeSeries();
     folderList.refresh();
@@ -1585,6 +1702,14 @@ $('#back').addEventListener('click', () => {
 
 async function reload() {
   const t = ui.tab;
+  if (t === 'agenda') {
+    await agenda.load(true);
+    eventChanCache.clear();
+    renderFolders();
+    refreshItems(false);
+    if (!agenda.error) toast('Agenda actualizada', 2000);
+    return;
+  }
   seriesCache.clear();
   epg?.clear();
   closeSeries();
