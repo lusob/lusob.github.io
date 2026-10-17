@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017g';
+import { startEngine, resetVideo } from './engines.js?v=20261017h';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -108,6 +108,7 @@ export class Player {
     v.addEventListener('playing', () => this.onPlaying());
     v.addEventListener('timeupdate', () => { if (!v.paused && v.currentTime > this.lastTime + 0.2) this.onPlaying(); });
     v.addEventListener('waiting', () => this.onWaiting());
+    v.addEventListener('seeking', () => { this.lastSeek = Date.now(); });
     v.addEventListener('loadedmetadata', () => this.updateTracks());
     v.addEventListener('timeupdate', () => {
       if (this.cu && this.cuT0 != null && this.cuPos() >= this.cu.end) this.finish();
@@ -352,7 +353,13 @@ export class Player {
     const base = Math.max(2, +s.buffer || 10);
     const max = Math.max(base, +s.bufferMax || 60);
     // Starts with what earlier sessions learned (frequent cuts), not from scratch every time.
-    if (this.eff == null || this.effBase !== base) { this.eff = Math.max(base, Math.min(max, +s.bufLearned || 0)); this.effBase = base; }
+    // Live and recordings / films learn apart: their bottlenecks differ (provider vs home Wi-Fi).
+    const key = this.live ? 'bufLearned' : 'bufLearnedVod';
+    if (this.eff == null || this.effBase !== base || this.effKey !== key) {
+      this.eff = Math.max(base, Math.min(max, +s[key] || 0));
+      this.effBase = base;
+      this.effKey = key;
+    }
     this.eff = Math.min(Math.max(this.eff, base), max);
     return { eff: this.eff, max };
   }
@@ -393,13 +400,13 @@ export class Player {
   }
 
   learn() {
-    this.getSettings().bufLearned = this.eff;
+    this.getSettings()[this.effKey] = this.eff;
     this.saveSettings?.();
   }
 
   // 15 min without cuts: 20 % less buffer (less delay), never below the setting.
   relax() {
-    if (!this.isOpen || !this.live || !this.played || this.filling) return;
+    if (!this.isOpen || !this.played || this.filling || this.video.paused) return;
     const { eff } = this.buffer();
     const base = this.effBase, now = Date.now();
     const calm = now - Math.max(this.lastStall || 0, this.lastRelax || 0, this.openedAt || 0);
@@ -411,7 +418,7 @@ export class Player {
   }
 
   drawBuf() {
-    const show = this.isOpen && this.live && !this.cu && this.played;
+    const show = this.isOpen && !this.cu && this.played;
     this.bufEl.hidden = !show;
     if (!show) return;
     const a = Math.max(0, Math.floor(this.ahead()));
@@ -548,14 +555,14 @@ export class Player {
 
   onWaiting() {
     if (!this.played || !this.isOpen || this.filling) return;
-    // Recordings, films: the whole file is there, a pause is just a jump or a slow download. Keep
-    // playing as soon as data arrives (no buffer to fill, no growing it); reconnect at the same
-    // point only if nothing arrives for a while.
-    if (!this.live) {
-      this.status(this.video.seeking ? 'Saltando…' : 'Cargando…');
+    // Recordings, films: a jump is not a cut (no pause, no bigger buffer); keep playing as soon as
+    // data arrives and reconnect at the same point only if nothing comes for a while.
+    if (!this.live && (this.video.seeking || Date.now() - (this.lastSeek || 0) < 4000)) {
+      this.status('Saltando…');
       this.armTimer(VOD_STUCK);
       return;
     }
+    // A real cut (live or not): bigger buffer if they are frequent, refill, go on.
     this.refill();
   }
 
