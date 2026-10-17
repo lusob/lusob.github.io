@@ -214,11 +214,12 @@ body.in-series #back { display: inline-block; }
   transition: opacity .3s;
 }
 .pbar button { background: rgb(0 0 0 / .4); border-color: rgb(255 255 255 / .15); }
-.ptext { flex: 1; min-width: 0; }
+.pbar { flex-wrap: wrap; justify-content: flex-end; }
+.ptext { flex: 1 1 300px; min-width: 0; }   /* too many buttons: they go to a second row, the text keeps its width */
 #pTitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #pInfo { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #pInfo b { color: var(--accent); font-weight: 600; }
-#pBuf { font-size: 13px; color: var(--dim); }
+#pBuf { font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 760px) {
   /* Portrait phone: the title and the buffer line take a row of their own, the buttons wrap below */
   .pbar { flex-wrap: wrap; }

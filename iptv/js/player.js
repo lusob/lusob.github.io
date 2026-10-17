@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017m';
+import { startEngine, resetVideo } from './engines.js?v=20261017n';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -397,7 +397,14 @@ export class Player {
     const t0 = Date.now();
     this.filling = setInterval(() => {
       if (tok !== this.token) return clearInterval(this.filling);
-      const ahead = this.ahead();
+      let ahead = this.ahead();
+      // Paused on a hole while the data piles up after it (it never fills): go to that data.
+      if (ahead < 0.5) {
+        const b = v.buffered, t = v.currentTime;
+        for (let i = 0; i < b.length; i++) {
+          if (b.start(i) > t && b.end(i) - b.start(i) > 1) { v.currentTime = b.start(i) + 0.1; this.nudgedAt = Date.now(); ahead = b.end(i) - b.start(i); break; }
+        }
+      }
       if (ahead > best + 0.5) { best = ahead; grewAt = Date.now(); this.armTimer(FILL_STUCK); }
       this.msg(`${grown ? `Cortes frecuentes: buffer ampliado a ${target} s. ` : ''}Llenando buffer… ${Math.floor(Math.max(0, ahead))}/${target} s`);
       // VOD: the browser may stop downloading before reaching the target; don't wait forever.
