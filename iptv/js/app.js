@@ -1,15 +1,15 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017k';
-import * as store from './store.js?v=20261017k';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017k';
-import { Player } from './player.js?v=20261017k';
-import { Epg, hhmm } from './epg.js?v=20261017k';
-import { Mosaic } from './mosaic.js?v=20261017k';
-import { initRemote } from './remote.js?v=20261017k';
-import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017k';
-import { Agenda, eventRow, channelVariants, NOW as AG_NOW, MINE as AG_MINE, DAY as AG_DAY } from './agenda.js?v=20261017k';
-import { Zapper } from './zap.js?v=20261017k';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017l';
+import * as store from './store.js?v=20261017l';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017l';
+import { Player } from './player.js?v=20261017l';
+import { Epg, hhmm } from './epg.js?v=20261017l';
+import { Mosaic } from './mosaic.js?v=20261017l';
+import { initRemote } from './remote.js?v=20261017l';
+import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017l';
+import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261017l';
+import { Zapper } from './zap.js?v=20261017l';
 
-const VERSION = '2026-10-17k';
+const VERSION = '2026-10-17l';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -642,7 +642,8 @@ $('#aliasSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.
 $('#aliasResults').addEventListener('click', e => { const b = e.target.closest('[data-pick]'); if (b) setAlias(b.dataset.pick); });
 $('#aliasClear').addEventListener('click', () => setAlias(null));
 
-const agendaEvents = () => ui.agendaMine ? agenda.events.filter(e => eventChannels(e).some(c => c.item)) : agenda.events;
+// By default only what can be played here; «Mostrar todos» adds the rest, dimmed.
+const agendaEvents = () => !ui.agendaAll ? agenda.events.filter(e => eventChannels(e).some(c => c.item)) : agenda.events;
 
 async function selectAgenda() {
   $('#deadBtn').hidden = true;
@@ -664,16 +665,10 @@ async function selectAgenda() {
 }
 
 function renderAgendaFolders(keepScroll) {
-  const rows = agenda.folders(agendaEvents());
-  rows.push({ id: AG_MINE, toggle: true, name: ui.agendaMine ? '☑ Solo lo que está en mi lista' : '☐ Solo lo que está en mi lista' });
-  folderList.set(rows, !keepScroll);
+  folderList.set(agenda.folders(agendaEvents()), !keepScroll);
 }
 
 function agendaFolderRow(f) {
-  if (f.toggle) {
-    return `<div class="row lock"><div class="grow"><div class="name">${esc(f.name)}</div>
-      <div class="meta">${ui.agendaMine ? 'Ocultando los que no se pueden ver aquí' : 'Todos; los que no se pueden ver, atenuados'}</div></div></div>`;
-  }
   const active = (ui.folder.agenda || AG_NOW) === f.id && !query;
   return `<div class="row${active ? ' active' : ''}"><div class="grow"><div class="name">${esc(f.name)}</div>
     <div class="meta">${[`${f.count} ${f.count === 1 ? 'evento' : 'eventos'}`, f.extra].filter(Boolean).join(' · ')}</div></div></div>`;
@@ -687,6 +682,13 @@ function refreshAgenda(resetScroll) {
   list = r.list;
   $('#listTitle').textContent = r.title;
   $('#listCount').textContent = list.length || '';
+  const mine = $('#mineBtn');
+  mine.hidden = false;
+  const now = Date.now() / 1000, next = agenda.events.filter(e => e.end > now);
+  const hidden = next.length - next.filter(e => eventChannels(e).some(c => c.item)).length;
+  mine.firstChild.textContent = ui.agendaAll ? 'Ocultar no reproducibles' : 'Mostrar todos';
+  mine.title = ui.agendaAll ? 'Ver solo los eventos de canales que están en tu lista' : 'Ver también los eventos de canales que no están en tu lista (atenuados)';
+  $('#mineCount').textContent = hidden > 0 ? `${ui.agendaAll ? '−' : '+'}${hidden}` : '';
   $('#items').hidden = false;
   $('#mosaic').hidden = true;
   itemList.set(list, resetScroll);
@@ -702,7 +704,7 @@ function refreshAgenda(resetScroll) {
   const when = agenda.updated ? new Date(agenda.updated * 1000).toLocaleString('es-ES', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) : '';
   $('#empty').hidden = !!list.length;
   $('#emptyText').textContent = agenda.error ? `No se pudo cargar la agenda: ${agenda.error}`
-    : query ? 'Sin resultados' : !agenda.events.length ? 'La agenda está vacía' : !ui.agendaMine ? 'No hay eventos' : 'No hay eventos en los canales de tu lista. Desmarca «Solo lo que está en mi lista» para verlos todos.';
+    : query ? 'Sin resultados' : !agenda.events.length ? 'La agenda está vacía' : ui.agendaAll ? 'No hay eventos' : 'No hay eventos en los canales de tu lista. Pulsa «Mostrar todos» para verlos todos.';
   $('#emptyDiag').textContent = when ? `Agenda de futbolenlatv.es, actualizada el ${when}` : '';
   $('#emptyRetry').hidden = !agenda.error;
   retryAction = reload;
@@ -729,6 +731,7 @@ async function selectTab(type) {
   mosaic.hide();
   mosaic.source = null;
   $('#mosaicBtn').hidden = type !== 'live';
+  $('#mineBtn').hidden = type !== 'agenda';
   if (type === 'agenda') return selectAgenda();
   if (!data[type]) {
     folderList.set([]);
@@ -793,13 +796,6 @@ function renderFolderRow(f) {
 }
 
 async function onFolderClick(f, i, act) {
-  if (f.toggle) {
-    ui.agendaMine = !ui.agendaMine;
-    saveUi();
-    renderFolders();
-    refreshItems(true);
-    return;
-  }
   if (f.lock) {
     if (unlocked) setLocked(true);
     else if (await unlock()) setLocked(false);
@@ -1631,6 +1627,13 @@ $('#deadBtn').addEventListener('click', () => {
   saveUi();
   $('#deadBtn').classList.toggle('on', ui.hideDead);
   mosaic.setHideDead(ui.hideDead);
+});
+
+$('#mineBtn').addEventListener('click', () => {
+  ui.agendaAll = !ui.agendaAll;
+  saveUi();
+  renderFolders();
+  refreshItems(true);
 });
 
 $('#mosaicBtn').addEventListener('click', () => {

@@ -136,8 +136,8 @@ body.in-series #back { display: inline-block; }
 .m-grid { height: 100%; display: grid; gap: 8px; }
 .m-grid.scroll { height: auto; }
 .m-grid.hide-dead .tile.dead { display: none; }
-#deadBtn { width: auto; padding: 0 14px; font-size: 16px; white-space: nowrap; }
-#deadBtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+#deadBtn, #mineBtn { width: auto; padding: 0 14px; font-size: 16px; white-space: nowrap; }
+#deadBtn.on, #mineBtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tile { position: relative; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: #000; cursor: pointer; }
 .tile:active { filter: brightness(1.2); }
 .tile.scanning { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
@@ -397,3 +397,4 @@ body.kbd :focus, dialog :focus-visible, #player :focus-visible { outline: 3px so
   .ag-vs { display: none; }
   .ag-team { max-width: 100%; }
 }
+#mineCount:not(:empty) { margin-left: 6px; opacity: .8; font-weight: 400; }
