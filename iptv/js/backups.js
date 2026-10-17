@@ -36,8 +36,12 @@ function rank(name) {
 
 const cache = { items: null, n: 0, index: null };
 
-// ids of the other versions of channel `ch` among `items`, best first.
-export function autoBackups(ch, items) {
+// SD versions last; otherwise most recently added first (dead copies tend to be the old ones), then by quality.
+const isSd = it => rank(it.name) === 5;
+const newest = (a, b) => isSd(a) - isSd(b) || (b.added || 0) - (a.added || 0) || rank(a.name) - rank(b.name) || a.name.localeCompare(b.name);
+
+// channelKey → versions of that channel, newest first.
+function index(items) {
   if (cache.items !== items || cache.n !== items.length) {
     const index = new Map();
     for (const it of items) {
@@ -47,14 +51,32 @@ export function autoBackups(ch, items) {
       if (!a) index.set(k, a = []);
       a.push(it);
     }
+    for (const a of index.values()) a.sort(newest);
     Object.assign(cache, { items, n: items.length, index });
   }
+  return cache.index;
+}
+
+// ids of the other versions of channel `ch` among `items`, newest first.
+export function autoBackups(ch, items) {
   const k = channelKey(ch.name);
   if (!k) return [];
-  return (cache.index.get(k) || [])
-    .filter(c => c.id !== ch.id)
-    .map(c => [c, rank(c.name)])
-    .sort((a, b) => a[1] - b[1] || a[0].name.localeCompare(b[0].name))
-    .slice(0, MAX)
-    .map(([c]) => c.id);
+  return (index(items).get(k) || []).filter(c => c.id !== ch.id).slice(0, MAX).map(c => c.id);
+}
+
+// Football channels, one entry per channel (its newest version; the others become its backups).
+const FOOTBALL = ['laliga', 'liga', 'dazn', 'futbol', 'football', 'champions', 'campeones', 'hypermotion', 'uefa', 'gol',
+  'partidazo', 'bundesliga', 'premier', 'calcio', 'eleven', 'bein'];
+const NOT_FOOTBALL = ['f', 'motogp', 'moto', 'formula', 'golf', 'tenis', 'tennis', 'nba', 'basket', 'baloncesto', 'acb', 'euroleague', 'ufc', 'boxeo'];
+
+export function footballChannels(items, visible) {
+  const out = [];
+  for (const [k, versions] of index(items)) {
+    const t = k.split(' ');
+    if (!t.some(w => FOOTBALL.includes(w)) || t.some(w => NOT_FOOTBALL.includes(w))) continue;
+    const vis = versions.filter(visible);
+    if (vis.length) out.push({ ...vis[0], versions: versions.length });
+  }
+  const label = it => words(it.name).filter(w => !QUALITY.has(w) && !COUNTRY.has(w)).join(' ');
+  return out.sort((a, b) => label(a).localeCompare(label(b), 'es', { numeric: true }));
 }

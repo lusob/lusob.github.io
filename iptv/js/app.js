@@ -1,16 +1,16 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016m';
-import * as store from './store.js?v=20261016m';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016m';
-import { Player } from './player.js?v=20261016m';
-import { Epg, hhmm } from './epg.js?v=20261016m';
-import { Mosaic } from './mosaic.js?v=20261016m';
-import { initRemote } from './remote.js?v=20261016m';
-import { autoBackups } from './backups.js?v=20261016m';
-import { Zapper } from './zap.js?v=20261016m';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017a';
+import * as store from './store.js?v=20261017a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017a';
+import { Player } from './player.js?v=20261017a';
+import { Epg, hhmm } from './epg.js?v=20261017a';
+import { Mosaic } from './mosaic.js?v=20261017a';
+import { initRemote } from './remote.js?v=20261017a';
+import { autoBackups, footballChannels } from './backups.js?v=20261017a';
+import { Zapper } from './zap.js?v=20261017a';
 
-const VERSION = '2026-10-16m';
+const VERSION = '2026-10-17a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
-const FAV = '__fav', ALL = '__all', REC = '__rec';
+const FAV = '__fav', ALL = '__all', REC = '__rec', FOOT = '__foot';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
 const MAX_AGE = 12 * 3600e3;   // refetch lists older than 12 h
 const ADULT_RE = /(^|[^\p{L}])(adult[oa]?s?|xxx|porn\p{L}*|er[oó]tic\p{L}*|hentai)(?!\p{L})|18\s*\+|\+\s*18/iu;
@@ -529,6 +529,17 @@ const folderDate = f => unlocked ? f.date : f.safeDate;
 const pending = (d, f) => !!d.partial && !d.partial.loaded.has(f.id) && (unlocked || !f.adult);   // not loaded yet
 const folderVisible = (d, f) => folderItems(f).length > 0 || pending(d, f);
 
+// Football channels without repeats: the newest version of each, the rest as its backups.
+let footCache = null;
+function football() {
+  const d = data.live, vis = visItems(d);
+  if (footCache?.vis !== vis || footCache.n !== d.items.length) {
+    const ok = new Set(vis);
+    footCache = { vis, n: d.items.length, list: footballChannels(d.items, it => ok.has(it)) };
+  }
+  return footCache.list;
+}
+
 // ---------------------------------------------------------------- tabs & folders
 
 async function selectTab(type) {
@@ -552,7 +563,7 @@ async function selectTab(type) {
   renderFolders(false);
   const d = data[type];
   let f = ui.folder[type] || ALL;
-  if (f !== FAV && f !== ALL && f !== REC && !(d.folderById.has(f) && folderVisible(d, d.folderById.get(f)))) f = ALL;
+  if (f !== FAV && f !== ALL && f !== REC && f !== FOOT && !(d.folderById.has(f) && folderVisible(d, d.folderById.get(f)))) f = ALL;
   ui.folder[type] = f;
   refreshItems(true);
 }
@@ -572,6 +583,8 @@ function renderFolders(keepScroll = true) {
     { id: ALL, name: 'Todo', count: all.length, date: all[0]?.added, virtual: true },
     ...(ui.tab === 'live' && (recorder || d.anyArchive || recs.length) ? [{ id: REC, name: '⏺ Grabaciones', count: recList().length, virtual: true,
       extra: recorder?.disk?.total ? `${fmtSize(recorder.disk.free)} libres` : '' }] : []),
+    ...(ui.tab === 'live' && football().length ? [{ id: FOOT, name: '⚽ Fútbol sin repetidos', count: football().length, virtual: true,
+      extra: 'respaldos: del más nuevo al más viejo' }] : []),
     ...folders.filter(f => fc.has(f.id)),
     ...folders.filter(f => !fc.has(f.id)),
   ];
@@ -637,6 +650,9 @@ function refreshItems(resetScroll) {
   } else if (id === ALL) {
     list = all;
     title = 'Todo';
+  } else if (id === FOOT && ui.tab === 'live') {
+    list = football();
+    title = '⚽ Fútbol sin repetidos';
   } else if (id === REC && ui.tab === 'live') {
     list = sortedRecs();
     title = 'Grabaciones';
@@ -715,8 +731,8 @@ function epgNow(it) {
 
 function renderItemRow(it) {
   if (it.rec) return renderRecRow(it);
-  const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL;
-  const meta = [showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
+  const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL || it.versions;
+  const meta = [it.versions > 1 && `${it.versions} versiones`, showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
   let sub = `<div class="meta">${meta}</div>`;
   if (ui.tab === 'live') {
     const e = settings.epg && epg?.get(it.id);
@@ -774,6 +790,7 @@ function zapFolders() {
   return [
     ...(favCount ? [{ id: FAV, name: '★ Favoritos', count: favCount }] : []),
     { id: ALL, name: 'Todo', count: all.length },
+    ...(football().length ? [{ id: FOOT, name: '⚽ Fútbol sin repetidos', count: football().length }] : []),
     ...[...folders.filter(f => fc.has(f.id)), ...folders.filter(f => !fc.has(f.id))]
       .map(f => ({ id: f.id, name: f.name, count: pending(d, f) ? '' : folderItems(f).length })),
   ];
@@ -782,6 +799,7 @@ function zapFolders() {
 async function zapItems(id) {
   if (id === FAV) return visItems(data.live).filter(i => favs.live.items.has(i.id));
   if (id === ALL) return visItems(data.live);
+  if (id === FOOT) return football();
   const f = data.live.folderById.get(id);
   if (f && pending(data.live, f)) await loadFolder('live', id);
   const g = data.live.folderById.get(id);
