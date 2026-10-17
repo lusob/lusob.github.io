@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261017e">
+  <link rel="stylesheet" href="css/app.css?v=20261017f">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261017e"></script>
+  <script type="module" src="js/app.js?v=20261017f"></script>
 </head>
 <body>
 
@@ -222,6 +222,20 @@
         <button value="stop" id="planStop" hidden>■ Detener ahora</button>
         <button value="delete" id="planDelete" class="danger">Borrar</button>
         <button value="cancel" formnovalidate>Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Agenda: which live channel a TV channel name is -->
+  <dialog id="aliasDialog">
+    <form method="dialog" class="card">
+      <h2 id="aliasTitle"></h2>
+      <p id="aliasHint" class="hint"></p>
+      <input id="aliasSearch" type="search" placeholder="Nombre del canal en tu lista" autocomplete="off" spellcheck="false">
+      <div id="aliasResults" class="alias-results"></div>
+      <div class="actions">
+        <button type="button" id="aliasClear" class="danger" hidden>Quitar asignación</button>
+        <button value="cancel">Cancelar</button>
       </div>
     </form>
   </dialog>

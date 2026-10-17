@@ -372,14 +372,17 @@ body.kbd :focus, dialog :focus-visible, #player :focus-visible { outline: 3px so
 .ag-chans { display: flex; gap: 6px; flex: none; max-width: 46%; overflow: hidden; }
 .ag-chans .chip { font-size: .8rem; padding: 6px 10px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--line); background: var(--panel-2); color: var(--dim); }
 .ag-chans .chip.on { background: #17351f; border-color: #2a6b3a; color: #b8f5c8; font-weight: 600; cursor: pointer; }
-.ag-chans .chip.off { opacity: .6; }
+.ag-chans .chip.off { opacity: .7; cursor: pointer; border-style: dashed; }
+.row.ag.nochan .grow, .row.ag.nochan .ag-icon, .row.ag.nochan .ag-time { opacity: .5; }
+.alias-results { display: flex; flex-direction: column; gap: 6px; max-height: 45vh; overflow: auto; margin-top: 10px; }
+.alias-results button { text-align: left; }
 .ag-chans .chip.on.kact { outline: 3px solid var(--accent); outline-offset: 1px; }
 .ag-chans .chip { min-height: 0; min-width: 0; height: auto; line-height: 1.2; }
 @media (max-width: 760px) {
   .row.ag { gap: 10px; }
   .ag-chans { max-width: 34%; flex-direction: column; gap: 4px; align-items: flex-end; }
   .ag-chans .chip { padding: 4px 9px; font-size: .74rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .ag-chans .chip.off, .ag-chans .chip.more, .ag-chans .chip:nth-child(n+3) { display: none; }
+  .ag-chans .chip.more, .ag-chans .chip:nth-child(n+3) { display: none; }
   .ag-icon { display: none; }
   .ag-time { width: 48px; }
   .ag-comp { font-size: .72rem; }

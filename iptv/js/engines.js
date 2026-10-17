@@ -31,6 +31,10 @@ export function startEngine(v, engine, url, opt, fail) {
       // (a recording still growing is a "live" playlist to hls.js: never jump to its end on our own)
       liveMaxLatencyDuration: fromStart ? 1e9 : Math.max(buffer * 3 + 10, 600),
       maxBufferLength: Math.max(30, buffer * 2),
+      // Recordings cut and resumed lose a frame or two between segments (0.1-0.2 s holes in the
+      // video): with the default 0.1 s hls.js sees those segments as incomplete and downloads them
+      // again and again (100 Mbit/s of nothing → stutter on Wi-Fi). Jump such holes instead.
+      maxBufferHole: 0.5,
       maxMaxBufferLength: Math.max(120, buffer * 4),
       backBufferLength: 30,
       // Patient with overloaded servers.

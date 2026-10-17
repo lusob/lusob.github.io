@@ -30,7 +30,10 @@ const respell = name => SPELLINGS.reduce((t, [re, to]) => t.replace(re, to), low
 // Normalized identity of a channel ('' when nothing meaningful is left).
 export function channelKey(name) {
   const keep = w => !QUALITY.has(w) && !BRAND.has(w) && !COUNTRY.has(w);
-  const toks = words(respell(name)).filter(keep).flatMap(w => w.split(/(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])/)).filter(keep);
+  const all = words(respell(name));
+  const toks = all.filter(keep).flatMap(w => w.split(/(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])/)).filter(keep);
+  // Nothing but the brand ("Movistar Plus+", "M+ Plus", "M+ 2"): the Movistar Plus+ channel itself
+  if (!toks.some(w => /[a-z]/.test(w)) && all.some(w => BRAND.has(w))) toks.unshift('movistarplus');
   if (!toks.length) return '';
   // "DAZN LaLiga" is "DAZN LaLiga 1"
   if (!toks.some(w => /^\d+$/.test(w))) toks.push('1');

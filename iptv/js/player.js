@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017e';
+import { startEngine, resetVideo } from './engines.js?v=20261017f';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -15,6 +15,7 @@ const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had starte
 const LOAD_TIMEOUT = 60;     // s without playback before an attempt is considered failed
 const BACKUP_TIMEOUT = 25;   // same, when there are backup channels to switch to
 const STALL_WINDOW = 180e3;  // a second cut within this time grows the buffer
+const VOD_STUCK = 30;        // s waiting in a recording / film → reconnect at the same point
 const FILL_STUCK = 25;       // s without the buffer growing while refilling → reconnect
 const BACKUP_RECONNECTS = 2; // with backups: reconnects before switching source
 const LIVE_EDGE = 90;        // catch-up closer than this (s) to now → switch to live
@@ -512,6 +513,14 @@ export class Player {
 
   onWaiting() {
     if (!this.played || !this.isOpen || this.filling) return;
+    // Recordings, films: the whole file is there, a pause is just a jump or a slow download. Keep
+    // playing as soon as data arrives (no buffer to fill, no growing it); reconnect at the same
+    // point only if nothing arrives for a while.
+    if (!this.live) {
+      this.status(this.video.seeking ? 'Saltando…' : 'Cargando…');
+      this.armTimer(VOD_STUCK);
+      return;
+    }
     this.refill();
   }
 

@@ -2,7 +2,7 @@
 // folders (now & next, days, sports) and a chronological list. Each event's channels are matched
 // with the live list so a press plays the broadcast.
 
-import { esc } from './ui.js?v=20261017e';
+import { esc } from './ui.js?v=20261017f';
 
 export const NOW = 'ag:now', DAY = 'ag:day:', SPORT = 'ag:sport:', MINE = 'ag:mine';
 
@@ -26,10 +26,27 @@ function dayName(t) {
 }
 
 // "DAZN 1 (M72)" → "DAZN 1"; "LaLiga TV M2" → "M+ LaLiga 2"; "M+ #Vamos Bar (307)" → "M+ Vamos Bar".
+const NUMBERS = { uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
 export function cleanChannel(name) {
   return name.replace(/\([^)]*\)/g, ' ').replace(/#/g, ' ')
     .replace(/\blaliga\s+tv\s+m(\d+)\b/i, 'M+ LaLiga $1')
+    .replace(/\bdazn\s+baloncesto\b/i, 'DAZN ACB')
+    .replace(/\bprimera\s+federaci[oó]n\b/i, 'M+ REF Federacion')
+    .replace(/\s+-\s+.*$/, '')                                   // "Tennis Channel - Orange TV"
+    .replace(/\b(la)\s+(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b/i, (_, a, n) => `${a} ${NUMBERS[n.toLowerCase()]}`)
     .replace(/\s+/g, ' ').trim();
+}
+
+// Looser names to try when the exact one is not in the list: without "Bar" (the same feed for
+// bars), "Web" / "Play" / "YouTube" / "App" (the channel's own site).
+export function channelVariants(name) {
+  const c = cleanChannel(name);
+  const out = [c];
+  const add = s => { s = s.replace(/\s+/g, ' ').trim(); if (s && !out.includes(s)) out.push(s); };
+  add(c.replace(/\bbar\b/ig, ''));
+  add(c.replace(/\b(web|youtube|app|directo|tv\s+web)\b/ig, ''));
+  add(c.replace(/(\w{2,})play\b/ig, '$1').replace(/\bplay\b/ig, ''));
+  return out;
 }
 
 export class Agenda {
@@ -101,7 +118,8 @@ export function eventRow(e, chans, showDay) {
     : `<span class="ag-team">${esc(e.title)}</span>`;
   const shown = chans.slice(0, 3);
   const more = chans.length - shown.length;
-  return `<div class="row ag${over ? ' over' : ''}${live ? ' live' : ''}">
+  const none = !chans.some(c => c.item);
+  return `<div class="row ag${over ? ' over' : ''}${live ? ' live' : ''}${none ? ' nochan' : ''}">
     <div class="ag-time">${live ? '<b class="ag-live">DIRECTO</b>' : `<b>${hm(e.t)}</b>`}${showDay ? `<small>${esc(dayName(e.t).replace(/^(Hoy|Mañana), .*/, '$1'))}</small>` : ''}</div>
     <div class="ag-icon" title="${esc(e.sport)}">${icon(e.sport)}</div>
     <div class="grow">
@@ -110,6 +128,6 @@ export function eventRow(e, chans, showDay) {
     </div>
     <div class="ag-chans">${shown.map((c, i) => c.item
       ? `<button class="chip on" data-act="ch:${i}" title="Ver en ${esc(c.item.name)}">▶ ${esc(c.name)}</button>`
-      : `<span class="chip off" title="No está en tu lista">${esc(c.name)}</span>`).join('')}${more > 0 ? `<span class="chip more">+${more}</span>` : ''}</div>
+      : `<button class="chip off" data-act="as:${i}" title="No encontrado en tu lista: pulsa para elegir el canal">${esc(c.name)}</button>`).join('')}${more > 0 ? `<span class="chip more">+${more}</span>` : ''}</div>
   </div>`;
 }

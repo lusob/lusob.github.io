@@ -1,15 +1,15 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017e';
-import * as store from './store.js?v=20261017e';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017e';
-import { Player } from './player.js?v=20261017e';
-import { Epg, hhmm } from './epg.js?v=20261017e';
-import { Mosaic } from './mosaic.js?v=20261017e';
-import { initRemote } from './remote.js?v=20261017e';
-import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017e';
-import { Agenda, eventRow, cleanChannel, NOW as AG_NOW, MINE as AG_MINE, DAY as AG_DAY } from './agenda.js?v=20261017e';
-import { Zapper } from './zap.js?v=20261017e';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017f';
+import * as store from './store.js?v=20261017f';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017f';
+import { Player } from './player.js?v=20261017f';
+import { Epg, hhmm } from './epg.js?v=20261017f';
+import { Mosaic } from './mosaic.js?v=20261017f';
+import { initRemote } from './remote.js?v=20261017f';
+import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017f';
+import { Agenda, eventRow, channelVariants, NOW as AG_NOW, MINE as AG_MINE, DAY as AG_DAY } from './agenda.js?v=20261017f';
+import { Zapper } from './zap.js?v=20261017f';
 
-const VERSION = '2026-10-17e';
+const VERSION = '2026-10-17f';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -168,6 +168,7 @@ const saveRecs = () => store.set('rec:' + account, recs);
 
 function loadFavs() {
   backups = store.get('bk:' + account, {});
+  aliases = store.get('alias:' + account, {});
   recs = store.get('rec:' + account, []);
   const raw = store.get('fav:' + account, {});
   favs = {};
@@ -581,22 +582,67 @@ function eventChannels(e) {
   const hit = eventChanCache.get(e.id);
   if (hit?.tag === tag) return hit.chans;
   const seen = new Set();
-  const chans = e.channels.map(name => ({ name: name.replace(/\s*\([^)]*\)/g, ''), item: items ? channelFor(name) : null }))
+  const chans = e.channels.map(name => ({ raw: name, name: name.replace(/\s*\([^)]*\)/g, ''), item: items ? channelFor(name) : null }))
     .filter(c => !c.item || (!seen.has(c.item.id) && seen.add(c.item.id)));   // "M+ LALIGA" and "M+ LALIGA HDR": one channel here
   chans.sort((a, b) => !!b.item - !!a.item);
   eventChanCache.set(e.id, { tag, chans });
   return chans;
 }
 
-// Best live channel for a TV channel name of the agenda: Spanish M+/DAZN versions first, then any non-foreign one.
+// Best live channel for a TV channel name of the agenda: one chosen by hand, else Spanish M+/DAZN
+// versions first, then any non-foreign one (trying looser spellings of the name).
 function channelFor(name) {
   const d = data.live, s = sports();
+  if (aliases[name]) return liveById(aliases[name]) || null;
   const vis = new Set(visItems(d));
-  const all = findChannels(cleanChannel(name), d.items).filter(it => vis.has(it));
-  return all.find(it => s.alts.has(it.id)) || all.find(it => !isForeign(it.name)) || null;
+  for (const n of channelVariants(name)) {
+    const all = findChannels(n, d.items).filter(it => vis.has(it));
+    const c = all.find(it => s.alts.has(it.id)) || all.find(it => !isForeign(it.name));
+    if (c) return c;
+  }
+  return null;
 }
 
-const agendaEvents = () => ui.agendaAll ? agenda.events : agenda.events.filter(e => eventChannels(e).some(c => c.item));
+// Agenda channel names assigned by hand to a live channel (per account).
+let aliases = {};
+let aliasFor = null;
+const saveAliases = () => store.set('alias:' + account, aliases);
+
+function editAlias(name) {
+  aliasFor = name;
+  $('#aliasTitle').textContent = `¿Qué canal de tu lista es «${name.replace(/\s*\([^)]*\)/g, '')}»?`;
+  const cur = aliases[name] && liveById(aliases[name]);
+  $('#aliasHint').textContent = cur ? `Ahora: ${cur.name}` : 'No lo he encontrado por el nombre. Búscalo y elígelo; se recordará para toda la agenda.';
+  $('#aliasClear').hidden = !aliases[name];
+  $('#aliasSearch').value = channelVariants(name).at(-1).split(' ').find(w => w.length > 2 && !/^(m\+|tv)$/i.test(w)) || '';
+  aliasResults();
+  $('#aliasDialog').showModal();
+  $('#aliasSearch').focus();
+}
+
+function aliasResults() {
+  const q = norm($('#aliasSearch').value.trim());
+  const res = q ? visItems(data.live).filter(c => c.key.includes(q)).slice(0, 12) : [];
+  $('#aliasResults').innerHTML = res.map(c => `<button type="button" data-pick="${esc(c.id)}">${esc(c.name)}</button>`).join('')
+    || `<p class="muted">${q ? 'Ningún canal con ese nombre' : 'Escribe parte del nombre'}</p>`;
+}
+
+function setAlias(id) {
+  if (id) aliases[aliasFor] = id; else delete aliases[aliasFor];
+  saveAliases();
+  eventChanCache.clear();
+  $('#aliasDialog').close();
+  renderFolders();
+  refreshItems(false);
+  toast(id ? `Asignado: ${liveById(id)?.name}` : 'Asignación quitada', 2500);
+}
+
+$('#aliasSearch').addEventListener('input', aliasResults);
+$('#aliasSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#aliasResults button')?.focus(); } });
+$('#aliasResults').addEventListener('click', e => { const b = e.target.closest('[data-pick]'); if (b) setAlias(b.dataset.pick); });
+$('#aliasClear').addEventListener('click', () => setAlias(null));
+
+const agendaEvents = () => ui.agendaMine ? agenda.events.filter(e => eventChannels(e).some(c => c.item)) : agenda.events;
 
 async function selectAgenda() {
   $('#deadBtn').hidden = true;
@@ -619,14 +665,14 @@ async function selectAgenda() {
 
 function renderAgendaFolders(keepScroll) {
   const rows = agenda.folders(agendaEvents());
-  rows.push({ id: AG_MINE, toggle: true, name: ui.agendaAll ? '☐ Solo lo que está en mi lista' : '☑ Solo lo que está en mi lista' });
+  rows.push({ id: AG_MINE, toggle: true, name: ui.agendaMine ? '☑ Solo lo que está en mi lista' : '☐ Solo lo que está en mi lista' });
   folderList.set(rows, !keepScroll);
 }
 
 function agendaFolderRow(f) {
   if (f.toggle) {
     return `<div class="row lock"><div class="grow"><div class="name">${esc(f.name)}</div>
-      <div class="meta">${ui.agendaAll ? 'Mostrando todos los eventos' : 'Ocultando los que no se pueden ver aquí'}</div></div></div>`;
+      <div class="meta">${ui.agendaMine ? 'Ocultando los que no se pueden ver aquí' : 'Todos; los que no se pueden ver, atenuados'}</div></div></div>`;
   }
   const active = (ui.folder.agenda || AG_NOW) === f.id && !query;
   return `<div class="row${active ? ' active' : ''}"><div class="grow"><div class="name">${esc(f.name)}</div>
@@ -656,13 +702,14 @@ function refreshAgenda(resetScroll) {
   const when = agenda.updated ? new Date(agenda.updated * 1000).toLocaleString('es-ES', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) : '';
   $('#empty').hidden = !!list.length;
   $('#emptyText').textContent = agenda.error ? `No se pudo cargar la agenda: ${agenda.error}`
-    : query ? 'Sin resultados' : !agenda.events.length ? 'La agenda está vacía' : ui.agendaAll ? 'No hay eventos' : 'No hay eventos en los canales de tu lista. Desmarca «Solo lo que está en mi lista» para verlos todos.';
+    : query ? 'Sin resultados' : !agenda.events.length ? 'La agenda está vacía' : !ui.agendaMine ? 'No hay eventos' : 'No hay eventos en los canales de tu lista. Desmarca «Solo lo que está en mi lista» para verlos todos.';
   $('#emptyDiag').textContent = when ? `Agenda de futbolenlatv.es, actualizada el ${when}` : '';
   $('#emptyRetry').hidden = !agenda.error;
   retryAction = reload;
 }
 
 function playEvent(e, act) {
+  if (act?.startsWith('as:')) return editAlias(eventChannels(e)[+act.slice(3)].raw);
   const chans = eventChannels(e).filter(c => c.item);
   const n = act?.startsWith('ch:') ? +act.slice(3) : 0;
   const c = eventChannels(e)[n]?.item ? eventChannels(e)[n] : chans[0];
@@ -747,7 +794,7 @@ function renderFolderRow(f) {
 
 async function onFolderClick(f, i, act) {
   if (f.toggle) {
-    ui.agendaAll = !ui.agendaAll;
+    ui.agendaMine = !ui.agendaMine;
     saveUi();
     renderFolders();
     refreshItems(true);
