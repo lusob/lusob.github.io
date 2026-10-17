@@ -7,8 +7,9 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261016l';
+import { startEngine, resetVideo } from './engines.js?v=20261016m';
 
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
 const MAX_RECONNECTS = 6;    // consecutive reconnects after playback had started
 const LOAD_TIMEOUT = 60;     // s without playback before an attempt is considered failed
@@ -139,7 +140,7 @@ export class Player {
     this.fav = fav;
     this.root.hidden = false;
     this.applyFit();
-    if (this.getSettings().autoFs !== false && !document.fullscreenElement) this.fullscreen();
+    if (this.getSettings().autoFs !== false && !document.fullscreenElement) this.fullscreen(true);
     if (!this.pushed) { history.pushState({ player: 1 }, ''); this.pushed = true; }
     this.load();
   }
@@ -196,6 +197,8 @@ export class Player {
   prepare() {
     if (this.cu) this.cu.base = Math.floor(this.cu.base / 60) * 60;
     this.attempts = this.sources[this.src].attempts(this.cu ? this.cu.base : 0);
+    // iPhone / iPad: Safari's own HLS player is far more reliable than hls.js there.
+    if (IOS) this.attempts = [...this.attempts.filter(a => a[0] === 'native-hls'), ...this.attempts.filter(a => a[0] !== 'native-hls')];
     this.updateTitle();
   }
 
@@ -607,12 +610,14 @@ export class Player {
 
   msg(t) { this.msgEl.textContent = t; }
 
-  fullscreen() {
+  // auto: on opening. The iPhone only has the video's own fullscreen player, which hides our
+  // messages and controls (black screen at 00:00 while loading): only on request there.
+  fullscreen(auto = false) {
     if (document.fullscreenElement) return document.exitFullscreen?.();
     const r = this.root;
     if (r.requestFullscreen) r.requestFullscreen().catch(() => {});
     else if (r.webkitRequestFullscreen) r.webkitRequestFullscreen();
-    else this.video.webkitEnterFullscreen?.();
+    else if (!auto) this.video.webkitEnterFullscreen?.();
   }
 
   close(fromPopstate = false) {

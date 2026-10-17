@@ -1,14 +1,14 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016l';
-import * as store from './store.js?v=20261016l';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016l';
-import { Player } from './player.js?v=20261016l';
-import { Epg, hhmm } from './epg.js?v=20261016l';
-import { Mosaic } from './mosaic.js?v=20261016l';
-import { initRemote } from './remote.js?v=20261016l';
-import { autoBackups } from './backups.js?v=20261016l';
-import { Zapper } from './zap.js?v=20261016l';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261016m';
+import * as store from './store.js?v=20261016m';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261016m';
+import { Player } from './player.js?v=20261016m';
+import { Epg, hhmm } from './epg.js?v=20261016m';
+import { Mosaic } from './mosaic.js?v=20261016m';
+import { initRemote } from './remote.js?v=20261016m';
+import { autoBackups } from './backups.js?v=20261016m';
+import { Zapper } from './zap.js?v=20261016m';
 
-const VERSION = '2026-10-16l';
+const VERSION = '2026-10-16m';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
