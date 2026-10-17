@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017j';
+import { startEngine, resetVideo } from './engines.js?v=20261017k';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -435,7 +435,9 @@ export class Player {
     const st = this.engine?.stats?.();
     const slow = st?.need && st.speed < st.need * 1.15;
     const net = st ? ` · llegan ${mbps(st.speed)}${st.need ? ` de ${mbps(st.need)}` : ''}` : '';
-    this.bufEl.textContent = `Colchón ${a}/${this.eff} s${net}` +
+    // Live: the cushion kept behind the edge vs its target. Recordings / films download well ahead
+    // of the target (it only matters after a cut): just say how much is loaded.
+    this.bufEl.textContent = (this.live ? `Colchón ${a} s (objetivo ${this.eff} s)` : `Cargados ${a} s por delante`) + net +
       (slow ? (this.live ? ' · lento: prueba otra versión (⇄)' : ' · la red no da para este vídeo') : '');
     this.bufEl.classList.toggle('low', a < 3 || !!slow);
   }
