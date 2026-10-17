@@ -1,15 +1,15 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017n';
-import * as store from './store.js?v=20261017n';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017n';
-import { Player } from './player.js?v=20261017n';
-import { Epg, hhmm } from './epg.js?v=20261017n';
-import { Mosaic } from './mosaic.js?v=20261017n';
-import { initRemote } from './remote.js?v=20261017n';
-import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017n';
-import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261017n';
-import { Zapper } from './zap.js?v=20261017n';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017o';
+import * as store from './store.js?v=20261017o';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017o';
+import { Player } from './player.js?v=20261017o';
+import { Epg, hhmm } from './epg.js?v=20261017o';
+import { Mosaic } from './mosaic.js?v=20261017o';
+import { initRemote } from './remote.js?v=20261017o';
+import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261017o';
+import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261017o';
+import { Zapper } from './zap.js?v=20261017o';
 
-const VERSION = '2026-10-17n';
+const VERSION = '2026-10-17o';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -143,7 +143,7 @@ function startSession(creds, info = null) {
   account = creds.server + '|' + creds.username;
   data = {};
   inflight.clear();
-  epg = new Epg(api, onEpg);
+  epg = new Epg(api, onEpg, id => data.live?.byId.get(id)?.name);
   loadFavs();
   showView('main');
   if (!info) api.login().catch(() => {});
@@ -1190,7 +1190,9 @@ async function openGuide(ch) {
   let c = tableCache.get(ch.id);
   if (!c || Date.now() - c.ts > 10 * 60e3) {
     try {
-      c = { list: await api.epgTable(ch.id), ts: Date.now() };
+      // The provider's table (with its archive flags) when it has one, else the guide by name.
+      const own = await api.epgTable(ch.id).catch(() => []);
+      c = { list: own.length ? own : await epg.listFor(ch.name), ts: Date.now() };
       tableCache.set(ch.id, c);
     } catch (ex) {
       c = null;

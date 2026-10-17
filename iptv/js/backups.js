@@ -24,6 +24,8 @@ const SPELLINGS = [
   [/\bop\s?\d\b/g, ' '], [/\bh\.?26[45]\b/g, ' '], [/\besp-\d+\s*:/g, ' '],
   [/\bla\s?liga\s?tv\b|\bla\s+liga\b|\blaligatv\b/g, 'laliga'], [/\bliga\s+(de\s+)?campeones\b/g, 'campeones'],
   [/\bformula\s?(f\s?)?1\b/g, 'f1'], [/\bmoto\s?gp\b/g, 'motogp'], [/\bdeporte\b/g, 'deportes'], [/\bsmartbank\b/g, 'hypermotion'],
+  [/\bref\s+federacion\b/g, 'primera federacion'], [/\bfdf\b/g, 'factoria de ficcion'], [/\b24\s?h\b/g, '24 horas'],
+  [/\bdazn\s+baloncesto\b/g, 'dazn acb'],
 ];
 const respell = name => SPELLINGS.reduce((t, [re, to]) => t.replace(re, to), lower(name));
 

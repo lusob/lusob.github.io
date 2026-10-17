@@ -263,6 +263,13 @@ export class Xtream {
     })).filter(p => p.start && p.end).sort((a, b) => a.start - b.start);
   }
 
+  // The provider's whole guide (XMLTV) as text; few panels fill it, but it names the channels
+  // exactly like the list.
+  xmltv() {
+    const q = new URLSearchParams({ username: this.username, password: this.password });
+    return this.requestText(this.wrap(`${this.server}/xmltv.php?${q}`), 120000);
+  }
+
   // Full guide of a channel (past and future), with has_archive per programme.
   async epgTable(id) {
     const d = await this.api('get_simple_data_table', { stream_id: id }, { timeout: 30000, retries: 1 });

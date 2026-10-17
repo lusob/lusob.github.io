@@ -1,13 +1,21 @@
-// Now/next EPG via get_short_epg, fetched lazily for what is on screen
-// (few concurrent requests, newest request wins, cached until the current programme ends).
+// Now/next EPG. Most panels tag very few channels, so the guide comes, by channel name, from:
+//  1. epg.json: the public Spanish guide (EPG_dobleM) (Movistar+, DAZN, TDT…), built daily by tools/epg.py;
+//  2. the provider's xmltv.php (same names as the list);
+//  3. get_short_epg per channel, fetched lazily for what is on screen
+//     (few concurrent requests, newest request wins, cached until the current programme ends).
+
+import { channelKey, isForeign } from './backups.js?v=20261017o';
 
 const CONCURRENCY = 3;
+// Daily by .github/workflows/epg.yml in lusob.github.io (tools/epg.py), on a branch of its own.
+const GUIDE_URL = 'https://raw.githubusercontent.com/lusob/lusob.github.io/epg/epg.json';
 const EMPTY_TTL = 30 * 60e3;
 
 export class Epg {
-  constructor(api, onUpdate) {
+  constructor(api, onUpdate, nameOf) {
     this.api = api;
     this.onUpdate = onUpdate;   // (id) => void
+    this.nameOf = nameOf;       // id → channel name
     this.cache = new Map();     // id → { list, exp }
     this.pending = new Set();
     this.queue = [];
@@ -24,8 +32,67 @@ export class Epg {
     return { now, next, progress: now ? (t - now.start) / (now.end - now.start) : 0 };
   }
 
+  // Guides by name, loaded once: { pub: key → programmes, prov: key → programmes }.
+  guides() {
+    return this.guidesP ||= (async () => {
+      const pub = new Map(), prov = new Map();
+      try {
+        const r = await fetch(GUIDE_URL);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        for (const c of j.ch) {
+          const list = c.p.map(([a, m, title]) => ({ title, desc: '', start: j.base + a * 60, end: j.base + (a + m) * 60 }));
+          for (const n of c.n) {
+            const k = !isForeign(n) && channelKey(n);
+            if (k && !pub.has(k)) pub.set(k, list);
+          }
+        }
+      } catch (e) { console.warn('epg.json', e); }
+      this.pub = pub;
+      try {
+        const x = await this.api.xmltv();
+        const ids = new Map();
+        for (const m of x.matchAll(/<channel id="([^"]*)"[^>]*>\s*<display-name[^>]*>([^<]*)/g)) ids.set(m[1], unxml(m[2]));
+        const by = new Map();
+        for (const m of x.matchAll(/<programme start="(\d{14}) ?([+-]\d{4})?" stop="(\d{14}) ?([+-]\d{4})?"[^>]*channel="([^"]*)"[^>]*>([\s\S]*?)<\/programme>/g)) {
+          const t = /<title[^>]*>([\s\S]*?)<\/title>/.exec(m[6]);
+          const d = /<desc[^>]*>([\s\S]*?)<\/desc>/.exec(m[6]);
+          if (!by.has(m[5])) by.set(m[5], []);
+          by.get(m[5]).push({ title: unxml(t?.[1] || ''), desc: unxml(d?.[1] || ''), start: xmlTs(m[1], m[2]), end: xmlTs(m[3], m[4]) });
+        }
+        for (const [id, name] of ids) {
+          const k = channelKey(name), list = by.get(id);
+          if (k && list?.length && !prov.has(k)) prov.set(k, list.sort((a, b) => a.start - b.start));
+        }
+      } catch (e) { console.warn('xmltv', e); }
+      this.prov = prov;
+    })();
+  }
+
+  // The whole guide of a channel by its name (public guide first), or null.
+  byName(name) {
+    if (!name) return null;
+    const k = channelKey(name);
+    return (!isForeign(name) && this.pub?.get(k)) || this.prov?.get(k) || null;
+  }
+
+  async listFor(name) {
+    await this.guides();
+    return this.byName(name) || [];
+  }
+
   // Replace the waiting queue with these ids (the ones currently visible).
-  want(ids, priority = false) {
+  async want(ids, priority = false) {
+    if (!this.pub) await this.guides();
+    ids = ids.filter(id => {
+      const e = this.cache.get(id);
+      if (e && e.exp >= Date.now()) return true;
+      const list = this.byName(this.nameOf?.(id));
+      if (!list) return true;
+      this.cache.set(id, { list, exp: Infinity });
+      this.onUpdate(id);
+      return false;
+    });
     const fresh = ids.filter(id => {
       const e = this.cache.get(id);
       return !this.pending.has(id) && (!e || e.exp < Date.now());
@@ -60,6 +127,16 @@ export class Epg {
     this.cache.clear();
     this.queue = [];
   }
+}
+
+const unxml = s => s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&(amp|lt|gt|quot|apos|#\d+);/g, (_, e) =>
+  ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[e] || String.fromCharCode(+e.slice(1))).trim();
+
+// "20261013001001", "+0200" → unix s
+function xmlTs(t, tz) {
+  const utc = Date.UTC(+t.slice(0, 4), +t.slice(4, 6) - 1, +t.slice(6, 8), +t.slice(8, 10), +t.slice(10, 12), +t.slice(12, 14)) / 1000;
+  const off = tz ? (tz[0] === '-' ? -1 : 1) * (+tz.slice(1, 3) * 3600 + +tz.slice(3, 5) * 60) : 0;
+  return utc - off;
 }
 
 export const hhmm = sec => new Date(sec * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
