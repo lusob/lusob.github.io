@@ -2,7 +2,7 @@
 // "M+ LaLiga 1 HD" ≈ "LALIGA 1 FHD" ≈ "ES: LaLiga 1 ᴴᴰ HEVC" ≈ "LaLiga 1 SD": quality tags, country
 // prefixes and the operator brand are ignored, everything else (including numbers) must match.
 
-const MAX = 6;
+const MAX = 40;   // every version: they are tried one after another until one works
 const QUALITY = new Set(['uhd', '4k', 'fhd', 'fullhd', 'hd', 'sd', 'hevc', 'h265', 'h264', 'x265', 'x264', 'fh', 'hq', 'lq',
   '1080', '1080p', '1080i', '720', '720p', '2160', '2160p', '50fps', '60fps', '25fps', 'fps', 'raw', 'vip', 'backup', 'bk', 'alt',
   'multi', 'multiaudio', 'dual', 'ott', 'hdr', 'sdr', 'low', 'high', 'tv']);

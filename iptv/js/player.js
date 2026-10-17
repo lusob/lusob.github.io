@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017a';
+import { startEngine, resetVideo } from './engines.js?v=20261017c';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -35,6 +35,8 @@ export class Player {
     this.prevBtn = root.querySelector('#pPrev');
     this.nextBtn = root.querySelector('#pNext');
     this.favBtn = root.querySelector('#pFav');
+    this.altBtn = root.querySelector('#pAlt');
+    this.altBtn.onclick = e => { e.stopPropagation(); this.otherSource(); };
     this.audioBtn = root.querySelector('#pAudio');
     this.subsBtn = root.querySelector('#pSubs');
     this.menu = root.querySelector('#pMenu');
@@ -204,6 +206,9 @@ export class Player {
 
   updateTitle() {
     const s = this.sources[this.src];
+    const n = this.sources.length;
+    this.altBtn.hidden = n < 2 || !!this.sk;
+    this.altBtn.textContent = `⇄ Versión ${this.src + 1}/${n}`;
     // Browser controls only for films and episodes: live, catch-up and recordings have our own bar.
     this.video.controls = !(this.live || this.cu || this.sk);
     this.title.textContent = this.baseTitle + (this.src > 0 ? ` · respaldo: ${s.name}` : '');
@@ -469,12 +474,20 @@ export class Player {
     this.src = (this.src + 1) % n;
     this.resetCounters();
     this.prepare();
-    const label = `${reason} Probando ${this.src ? 'respaldo' : 'canal principal'}: ${this.sources[this.src].name}…`;
+    const label = `${reason ? reason + ' ' : ''}Probando versión ${this.src + 1}/${n}: ${this.sources[this.src].name}…`;
+    this.updateTitle();
     this.teardown();
     this.status(label);
     const tok = ++this.token;
     setTimeout(() => { if (tok === this.token) this.attempt(0, label); }, 800);
     return true;
+  }
+
+  // By hand ("this one stutters"): next version of the channel, without counting towards the limit.
+  otherSource() {
+    if (this.sources.length < 2) return;
+    this.switches = 0;
+    this.nextSource('');
   }
 
   giveUp(text) {

@@ -1,14 +1,14 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017a';
-import * as store from './store.js?v=20261017a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017a';
-import { Player } from './player.js?v=20261017a';
-import { Epg, hhmm } from './epg.js?v=20261017a';
-import { Mosaic } from './mosaic.js?v=20261017a';
-import { initRemote } from './remote.js?v=20261017a';
-import { autoBackups, footballChannels } from './backups.js?v=20261017a';
-import { Zapper } from './zap.js?v=20261017a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017c';
+import * as store from './store.js?v=20261017c';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017c';
+import { Player } from './player.js?v=20261017c';
+import { Epg, hhmm } from './epg.js?v=20261017c';
+import { Mosaic } from './mosaic.js?v=20261017c';
+import { initRemote } from './remote.js?v=20261017c';
+import { autoBackups, footballChannels } from './backups.js?v=20261017c';
+import { Zapper } from './zap.js?v=20261017c';
 
-const VERSION = '2026-10-17a';
+const VERSION = '2026-10-17c';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', FOOT = '__foot';
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
@@ -58,6 +58,7 @@ const zap = new Zapper({
   enabled: () => player.isOpen && playerKind === 'live' && !player.cu && !player.sk && !!player.current && !!liveById(player.current.id),
   folders: zapFolders,
   folderItems: zapItems,
+  folderOf: it => folderName(it, 'live'),
   play: async (items, i, title, folderId) => { if (await confirmBusy()) openLive(items, i, title, folderId); },
 });
 
@@ -717,9 +718,9 @@ function refreshItems(resetScroll) {
 
 let retryAction = null;
 
-function folderName(it) {
+function folderName(it, tab = ui.tab) {
   for (const c of it.cats) {
-    const f = data[ui.tab].folderById.get(c);
+    const f = data[tab].folderById.get(c);
     if (f) return f.name;
   }
   return '';
@@ -731,9 +732,11 @@ function epgNow(it) {
 
 function renderItemRow(it) {
   if (it.rec) return renderRecRow(it);
-  const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL || it.versions;
-  const meta = [it.versions > 1 && `${it.versions} versiones`, showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
+  const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL;
+  const meta = [!it.versions && showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
   let sub = `<div class="meta">${meta}</div>`;
+  // Football list: shortcuts to the original channels, always say which folder each one is in.
+  const from = it.versions ? ` <span class="from">· 📁 ${esc(folderName(it))}${it.versions > 1 ? ` · ${it.versions} versiones` : ''}</span>` : '';
   if (ui.tab === 'live') {
     const e = settings.epg && epg?.get(it.id);
     if (e?.now) {
@@ -743,7 +746,7 @@ function renderItemRow(it) {
   }
   return `<div class="row">
     <div class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
-    <div class="grow"><div class="name">${esc(it.name)}</div>${sub}</div>
+    <div class="grow"><div class="name">${esc(it.name)}${from}</div>${sub}</div>
     ${!it.noDate && isNew(it.added) ? '<span class="badge">Nuevo</span>' : ''}
     ${ui.tab === 'live' && it.archive ? `<span class="badge arch" title="Archivo de ${it.archive} días">⏪ ${it.archive} d</span>` : ''}
     ${ui.tab === 'live' ? '<button class="star gbtn" data-act="guide" aria-label="Guía">≡</button>' : ''}

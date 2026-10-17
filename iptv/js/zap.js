@@ -4,8 +4,8 @@
 // - Up / Down ("pilot") browses the neighbouring channels in a translucent footer with their
 //   programme; nothing changes until OK.
 
-import { esc, initials, VList } from './ui.js?v=20261017a';
-import { hhmm } from './epg.js?v=20261017a';
+import { esc, initials, VList } from './ui.js?v=20261017c';
+import { hhmm } from './epg.js?v=20261017c';
 
 const PILOT_HIDE = 6000;   // ms without keys before the footer goes away (without switching)
 const INFO_HIDE = 4000;    // footer shown briefly after every channel change
@@ -105,7 +105,7 @@ export class Zapper {
     return `<div class="row${playing ? ' active' : ''}">
       <span class="z-num">${i + 1}</span>
       <div class="logo">${initials(x.name)}${x.icon ? `<img src="${esc(x.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
-      <div class="grow"><div class="name">${esc(x.name)}</div>
+      <div class="grow"><div class="name">${esc(x.name)}${x.versions ? ` <span class="from">· 📁 ${esc(this.ctx.folderOf(x))}</span>` : ''}</div>
         ${e?.now ? `<div class="meta epg"><b>${hhmm(e.now.start)}</b> ${esc(e.now.title)}</div><div class="bar"><i style="width:${Math.round(e.progress * 100)}%"></i></div>` : ''}
       </div></div>`;
   }

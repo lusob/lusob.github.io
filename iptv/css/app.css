@@ -352,3 +352,4 @@ body.kbd :focus, dialog :focus-visible, #player :focus-visible { outline: 3px so
   #back { display: inline-block; }
   .s-head img { width: 90px; }
 }
+.row .name .from { font-weight: 400; color: var(--muted, #9aa); font-size: .85em; }
