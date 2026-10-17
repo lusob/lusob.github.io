@@ -43,6 +43,13 @@ export function startEngine(v, engine, url, opt, fail) {
       fragLoadingTimeOut: 45000, fragLoadingMaxRetry: 8, fragLoadingRetryDelay: 1000,
       nudgeMaxRetry: 10,
     });
+    // Network speed vs what the stream needs, over the last fragments (only while downloading).
+    const frags = [];
+    hls.on(Hls.Events.FRAG_LOADED, (_, d) => {
+      const st = d.frag.stats, ms = st.loading.end - st.loading.start;
+      if (st.loaded > 0 && ms > 0 && d.frag.duration > 0) frags.push({ bytes: st.loaded, ms, dur: d.frag.duration });
+      if (frags.length > 12) frags.shift();
+    });
     let recovered = false;
     hls.on(Hls.Events.ERROR, (_, d) => {
       if (!d.fatal) return;
@@ -62,6 +69,11 @@ export function startEngine(v, engine, url, opt, fail) {
     hls.attachMedia(v);
     return {
       destroy: () => hls.destroy(),
+      stats: () => {
+        if (frags.length < 2) return null;
+        const bits = frags.reduce((a, f) => a + f.bytes * 8, 0);
+        return { speed: bits / frags.reduce((a, f) => a + f.ms / 1000, 0), need: bits / frags.reduce((a, f) => a + f.dur, 0) };
+      },
       setBuffer: sec => {
         hls.config.liveSyncDuration = sec;
         hls.config.maxBufferLength = Math.max(30, sec * 2);
@@ -105,7 +117,11 @@ export function startEngine(v, engine, url, opt, fail) {
     } else {
       play();
     }
-    return { destroy: () => { clearInterval(timer); try { p.destroy(); } catch {} } };
+    return {
+      destroy: () => { clearInterval(timer); try { p.destroy(); } catch {} },
+      // A raw TS arrives as fast as it is sent: the speed is all we can tell.
+      stats: () => { const k = p.statisticsInfo?.speed; return k ? { speed: k * 8192, need: 0 } : null; },
+    };
   }
 
   // 'native' (files) or 'native-hls'

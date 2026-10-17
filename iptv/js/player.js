@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261017h';
+import { startEngine, resetVideo } from './engines.js?v=20261017i';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -369,6 +369,14 @@ export class Player {
     const { eff, max } = this.buffer();
     const now = Date.now();
     let grown = false;
+    // Cutting again with the buffer already at its maximum: more buffer won't help (the stream comes
+    // slower than it plays, or the server keeps dropping it). Try another version of the channel.
+    if (this.live && now - this.lastStall < STALL_WINDOW && eff >= max && this.sources.length > 1) {
+      this.lastStall = now;
+      const st = this.engine?.stats?.();
+      const why = st?.need && st.speed < st.need ? `Llega a ${mbps(st.speed)} y necesita ${mbps(st.need)}.` : 'Se sigue cortando con el colchón al máximo.';
+      if (this.nextSource(why)) return;
+    }
     if (now - this.lastStall < STALL_WINDOW && eff < max) {
       this.eff = Math.min(max, Math.round(eff + Math.max(5, eff * 0.5)));
       this.engine?.setBuffer?.(this.eff);
@@ -422,8 +430,12 @@ export class Player {
     this.bufEl.hidden = !show;
     if (!show) return;
     const a = Math.max(0, Math.floor(this.ahead()));
-    this.bufEl.textContent = `Colchón ${a} s · objetivo ${this.eff} s${this.eff > this.effBase ? ' (ampliado por cortes)' : ''}`;
-    this.bufEl.classList.toggle('low', a < 3);
+    const st = this.engine?.stats?.();
+    const slow = st?.need && st.speed < st.need * 1.15;
+    const net = st ? ` · llega a ${mbps(st.speed)}${st.need ? ` (necesita ${mbps(st.need)})` : ''}` : '';
+    this.bufEl.textContent = `Colchón ${a} s · objetivo ${this.eff} s${this.eff > this.effBase ? ' (ampliado por cortes)' : ''}${net}` +
+      (slow ? ' · el servidor va justo para este canal: prueba otra versión (⇄)' : '');
+    this.bufEl.classList.toggle('low', a < 3 || !!slow);
   }
 
   ahead() {
@@ -703,4 +715,5 @@ export class Player {
   }
 }
 
+const mbps = bps => `${(bps / 1e6).toFixed(1).replace('.', ',')} Mbps`;
 const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
