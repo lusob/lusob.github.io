@@ -1,16 +1,17 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017c';
-import * as store from './store.js?v=20261017c';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017c';
-import { Player } from './player.js?v=20261017c';
-import { Epg, hhmm } from './epg.js?v=20261017c';
-import { Mosaic } from './mosaic.js?v=20261017c';
-import { initRemote } from './remote.js?v=20261017c';
-import { autoBackups, footballChannels } from './backups.js?v=20261017c';
-import { Zapper } from './zap.js?v=20261017c';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261017d';
+import * as store from './store.js?v=20261017d';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261017d';
+import { Player } from './player.js?v=20261017d';
+import { Epg, hhmm } from './epg.js?v=20261017d';
+import { Mosaic } from './mosaic.js?v=20261017d';
+import { initRemote } from './remote.js?v=20261017d';
+import { autoBackups, sportsChannels, SPORTS } from './backups.js?v=20261017d';
+import { Zapper } from './zap.js?v=20261017d';
 
-const VERSION = '2026-10-17c';
+const VERSION = '2026-10-17d';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
-const FAV = '__fav', ALL = '__all', REC = '__rec', FOOT = '__foot';
+const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
+const isSport = id => id === SPORT || String(id).startsWith('sport:');
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
 const MAX_AGE = 12 * 3600e3;   // refetch lists older than 12 h
 const ADULT_RE = /(^|[^\p{L}])(adult[oa]?s?|xxx|porn\p{L}*|er[oó]tic\p{L}*|hentai)(?!\p{L})|18\s*\+|\+\s*18/iu;
@@ -530,15 +531,41 @@ const folderDate = f => unlocked ? f.date : f.safeDate;
 const pending = (d, f) => !!d.partial && !d.partial.loaded.has(f.id) && (unlocked || !f.adult);   // not loaded yet
 const folderVisible = (d, f) => folderItems(f).length > 0 || pending(d, f);
 
-// Football channels without repeats: the newest version of each, the rest as its backups.
-let footCache = null;
-function football() {
-  const d = data.live, vis = visItems(d);
-  if (footCache?.vis !== vis || footCache.n !== d.items.length) {
+// Spanish M+ / DAZN sports channels without repeats, one folder per sport: the newest version
+// of each channel, the other Spanish versions as its backups.
+let sportCache = null;
+function sports() {
+  const d = data.live;
+  if (!d) return { groups: new Map(), alts: new Map(), all: [] };
+  const vis = visItems(d);
+  if (sportCache?.vis !== vis || sportCache.n !== d.items.length) {
     const ok = new Set(vis);
-    footCache = { vis, n: d.items.length, list: footballChannels(d.items, it => ok.has(it)) };
+    const folderOf = it => it.cats.map(c => d.folderById.get(c)?.name || '').join(' ');
+    const r = sportsChannels(d.items, it => ok.has(it), folderOf);
+    sportCache = { vis, n: d.items.length, ...r, all: [...r.groups.values()].flat() };
   }
-  return footCache.list;
+  return sportCache;
+}
+
+// Folder rows: the parent, then (when unfolded, or always in the player's list) one per sport.
+function sportRows(open) {
+  const s = sports();
+  if (!s.all.length) return [];
+  const rows = [{ id: SPORT, name: `${open ? '▾' : '▸'} M+/DAZN Deportes`, count: s.all.length, virtual: true, extra: 'España · sin repetidos' }];
+  if (open) {
+    for (const [id, name] of SPORTS) {
+      const n = s.groups.get(id).length;
+      if (n) rows.push({ id: 'sport:' + id, name, count: n, virtual: true, child: true });
+    }
+  }
+  return rows;
+}
+
+function sportList(id) {
+  const s = sports();
+  if (id === SPORT) return { list: s.all, title: 'M+/DAZN Deportes' };
+  const sp = SPORTS.find(x => 'sport:' + x[0] === id);
+  return { list: s.groups.get(sp?.[0]) || [], title: sp ? `M+/DAZN · ${sp[1]}` : '' };
 }
 
 // ---------------------------------------------------------------- tabs & folders
@@ -564,7 +591,7 @@ async function selectTab(type) {
   renderFolders(false);
   const d = data[type];
   let f = ui.folder[type] || ALL;
-  if (f !== FAV && f !== ALL && f !== REC && f !== FOOT && !(d.folderById.has(f) && folderVisible(d, d.folderById.get(f)))) f = ALL;
+  if (f !== FAV && f !== ALL && f !== REC && !isSport(f) && !(d.folderById.has(f) && folderVisible(d, d.folderById.get(f)))) f = ALL;
   ui.folder[type] = f;
   refreshItems(true);
 }
@@ -584,8 +611,7 @@ function renderFolders(keepScroll = true) {
     { id: ALL, name: 'Todo', count: all.length, date: all[0]?.added, virtual: true },
     ...(ui.tab === 'live' && (recorder || d.anyArchive || recs.length) ? [{ id: REC, name: '⏺ Grabaciones', count: recList().length, virtual: true,
       extra: recorder?.disk?.total ? `${fmtSize(recorder.disk.free)} libres` : '' }] : []),
-    ...(ui.tab === 'live' && football().length ? [{ id: FOOT, name: '⚽ Fútbol sin repetidos', count: football().length, virtual: true,
-      extra: 'respaldos: del más nuevo al más viejo' }] : []),
+    ...(ui.tab === 'live' ? sportRows(!!ui.sportsOpen) : []),
     ...folders.filter(f => fc.has(f.id)),
     ...folders.filter(f => !fc.has(f.id)),
   ];
@@ -605,7 +631,7 @@ function renderFolderRow(f) {
   const meta = !f.virtual && pending(data[ui.tab], f)
     ? (p.loading.has(f.id) ? 'Cargando…' : p.errors.has(f.id) ? 'Error · toca para reintentar' : 'Toca para abrir')
     : [count + (count === 1 ? ' elemento' : ' elementos'), !data[ui.tab].noDate && ago(date), f.extra].filter(Boolean).join(' · ');
-  return `<div class="row${active ? ' active' : ''}">
+  return `<div class="row${active ? ' active' : ''}${f.child ? ' child' : ''}">
     <div class="grow"><div class="name">${esc(f.name)}</div><div class="meta">${meta}</div></div>
     ${!data[ui.tab].noDate && isNew(date) && f.id !== FAV ? '<span class="badge">Nuevo</span>' : ''}
     ${f.virtual ? '' : `<button class="star${favs[ui.tab].cats.has(f.id) ? ' on' : ''}" data-act="fav" aria-label="Favorito">★</button>`}
@@ -624,6 +650,11 @@ async function onFolderClick(f, i, act) {
     return;
   }
   if (query) { query = ''; $('#search').value = ''; }
+  if (f.id === SPORT) {
+    // Unfold / fold the sports; opening it also lists every channel of them
+    ui.sportsOpen = !(ui.sportsOpen && ui.folder[ui.tab] === SPORT);
+    renderFolders();
+  }
   data[ui.tab]?.partial?.errors.delete(f.id);
   ui.folder[ui.tab] = f.id;
   saveUi();
@@ -651,9 +682,8 @@ function refreshItems(resetScroll) {
   } else if (id === ALL) {
     list = all;
     title = 'Todo';
-  } else if (id === FOOT && ui.tab === 'live') {
-    list = football();
-    title = '⚽ Fútbol sin repetidos';
+  } else if (isSport(id) && ui.tab === 'live') {
+    ({ list, title } = sportList(id));
   } else if (id === REC && ui.tab === 'live') {
     list = sortedRecs();
     title = 'Grabaciones';
@@ -793,7 +823,7 @@ function zapFolders() {
   return [
     ...(favCount ? [{ id: FAV, name: '★ Favoritos', count: favCount }] : []),
     { id: ALL, name: 'Todo', count: all.length },
-    ...(football().length ? [{ id: FOOT, name: '⚽ Fútbol sin repetidos', count: football().length }] : []),
+    ...sportRows(true).map(f => ({ ...f, name: f.child ? `· ${f.name}` : 'M+/DAZN Deportes' })),
     ...[...folders.filter(f => fc.has(f.id)), ...folders.filter(f => !fc.has(f.id))]
       .map(f => ({ id: f.id, name: f.name, count: pending(d, f) ? '' : folderItems(f).length })),
   ];
@@ -802,7 +832,7 @@ function zapFolders() {
 async function zapItems(id) {
   if (id === FAV) return visItems(data.live).filter(i => favs.live.items.has(i.id));
   if (id === ALL) return visItems(data.live);
-  if (id === FOOT) return football();
+  if (isSport(id)) return sportList(id).list;
   const f = data.live.folderById.get(id);
   if (f && pending(data.live, f)) await loadFolder('live', id);
   const g = data.live.folderById.get(id);
@@ -900,7 +930,7 @@ setInterval(() => {
 
 const liveById = id => data.live?.byId.get(String(id));
 // Backups chosen by hand, or else the other versions of the channel (HD / FHD / SD…) found by name.
-const autoBackupIds = id => { const ch = liveById(id); return ch ? autoBackups(ch, data.live.items) : []; };
+const autoBackupIds = id => { const ch = liveById(id); return ch ? sports().alts.get(id) ?? autoBackups(ch, data.live.items) : []; };
 const backupIds = id => backups[id] ?? autoBackupIds(id);
 const backupsOf = id => backupIds(id).map(liveById).filter(Boolean);
 const hasArchive = chans => chans.some(c => c.archive > 0);

@@ -5,21 +5,35 @@
 const MAX = 40;   // every version: they are tried one after another until one works
 const QUALITY = new Set(['uhd', '4k', 'fhd', 'fullhd', 'hd', 'sd', 'hevc', 'h265', 'h264', 'x265', 'x264', 'fh', 'hq', 'lq',
   '1080', '1080p', '1080i', '720', '720p', '2160', '2160p', '50fps', '60fps', '25fps', 'fps', 'raw', 'vip', 'backup', 'bk', 'alt',
-  'multi', 'multiaudio', 'dual', 'ott', 'hdr', 'sdr', 'low', 'high', 'tv']);
+  'multi', 'multiaudio', 'dual', 'ott', 'hdr', 'sdr', 'low', 'high', 'tv', 'solo', 'eventos', 'fibra', 'ppv', 'avatel', 'test', 'gp']);
 const BRAND = new Set(['movistar', 'movi', 'mov', 'm', 'plus', 'mplus']);
 const DIGITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
 const COUNTRY = new Set(['es', 'esp', 'spa', 'spain', 'espana']);
 
+const lower = name => String(name).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
 function words(name) {
-  return String(name).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  return lower(name)
     .replace(/(^|\s)\+\s?(\d)\b/g, (_, a, d) => ` timeshift${DIGITS[d]} `)   // "+1" channels are different channels
     .replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
 }
 
+// The same channel spelled differently by each list ("M+ LA LIGA TV 3" / "M. LaLiga 3",
+// "Liga DE Campeones 2" / "M+ Campeones 2", "DAZN Formula 1" / "DAZN F1", "DAZN 1 | OP2"…).
+const SPELLINGS = [
+  [/\bop\s?\d\b/g, ' '], [/\bh\.?26[45]\b/g, ' '], [/\besp-\d+\s*:/g, ' '],
+  [/\bla\s?liga\s?tv\b|\bla\s+liga\b|\blaligatv\b/g, 'laliga'], [/\bliga\s+(de\s+)?campeones\b/g, 'campeones'],
+  [/\bformula\s?(f\s?)?1\b/g, 'f1'], [/\bmoto\s?gp\b/g, 'motogp'], [/\bdeporte\b/g, 'deportes'], [/\bsmartbank\b/g, 'hypermotion'],
+];
+const respell = name => SPELLINGS.reduce((t, [re, to]) => t.replace(re, to), lower(name));
+
 // Normalized identity of a channel ('' when nothing meaningful is left).
 export function channelKey(name) {
   const keep = w => !QUALITY.has(w) && !BRAND.has(w) && !COUNTRY.has(w);
-  const toks = words(name).filter(keep).flatMap(w => w.split(/(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])/)).filter(keep);
+  const toks = words(respell(name)).filter(keep).flatMap(w => w.split(/(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])/)).filter(keep);
+  if (!toks.length) return '';
+  // "DAZN LaLiga" is "DAZN LaLiga 1"
+  if (!toks.some(w => /^\d+$/.test(w))) toks.push('1');
   return [...new Set(toks)].sort().join(' ');
 }
 
@@ -64,19 +78,52 @@ export function autoBackups(ch, items) {
   return (index(items).get(k) || []).filter(c => c.id !== ch.id).slice(0, MAX).map(c => c.id);
 }
 
-// Football channels, one entry per channel (its newest version; the others become its backups).
-const FOOTBALL = ['laliga', 'liga', 'dazn', 'futbol', 'football', 'champions', 'campeones', 'hypermotion', 'uefa', 'gol',
-  'partidazo', 'bundesliga', 'premier', 'calcio', 'eleven', 'bein'];
-const NOT_FOOTBALL = ['f', 'motogp', 'moto', 'formula', 'golf', 'tenis', 'tennis', 'nba', 'basket', 'baloncesto', 'acb', 'euroleague', 'ufc', 'boxeo'];
+// Spanish Movistar+ / DAZN sports channels, one entry per channel (its newest version; the
+// others become its backups), in one folder per sport.
+export const SPORTS = [
+  ['futbol', '⚽ Fútbol', ['laliga', 'liga', 'campeones', 'champions', 'futbol', 'copa', 'hypermotion', 'federacion', 'ref', 'replay', 'highlights', 'uefa', 'europa', 'premier', 'bundesliga', 'calcio']],
+  ['basket', '🏀 Baloncesto', ['nba', 'acb', 'euroleague', 'euroliga', 'baloncesto', 'basket']],
+  ['f1', '🏎 Fórmula 1', ['f1']],
+  ['moto', '🏍 MotoGP', ['motogp', 'moto', 'superbike', 'sbk']],
+  ['golf', '⛳ Golf', ['golf']],
+  ['tenis', '🎾 Tenis', ['tenis', 'tennis', 'atp', 'wta']],
+  ['lucha', '🥊 Boxeo y UFC', ['box', 'boxeo', 'ufc', 'mma', 'wwe']],
+  ['toros', '🐂 Toros', ['toros']],
+  ['otros', '🏅 Deportes y eventos', []],
+];
+const FOREIGN = /┃(?!es┃)[a-z]{2}┃|^\s*(?!es\b|esp\b)[a-z]{2,3}\s*[:|]|^\s*lat\b|^\s*#\d|\((?!es\))[a-z]{2,3}\)\s*$|\[(?!esp\])[a-z]{3}\]/;
+const SPANISH = /┃es┃|^\s*esp?\s*[:|]|\(es\)|\bspain\b|\[esp\]|\besp-\d|\bespana\b|\besp\b/;
+const BRANDED = /\bm\s?\+|\bm\.\s|\bmovistar\b|\bdazn\b|^\W*vamos\b|\bliga\s+(de\s+)?campeones\b/;
 
-export function footballChannels(items, visible) {
-  const out = [];
+function isSpanishSport(it, folder) {
+  const n = lower(it.name), f = lower(folder);
+  if (FOREIGN.test(n) || /24\s*\/\s*7/.test(n)) return false;
+  if (!(SPANISH.test(n) || SPANISH.test(f))) return false;
+  return BRANDED.test(n) || BRANDED.test(f);
+}
+
+function sportOf(key) {
+  const t = key.split(' ');
+  if (t.includes('f')) return 'f1';    // "F1" → "f 1"
+  const sport = SPORTS.find(([, , kw]) => kw.some(w => t.includes(w)))?.[0];
+  // Anything else only when it is clearly a sports channel (not M+ Cine, Series…)
+  return sport || (['dazn', 'deportes', 'vamos', 'ellas'].some(w => t.includes(w)) ? 'otros' : null);
+}
+
+// → { groups: Map sportId → entries (each a copy of the newest visible version, with `versions`),
+//     alts: Map id → ids of the other Spanish versions (their backups, instead of any country's) }
+export function sportsChannels(items, visible, folderOf) {
+  const out = new Map(SPORTS.map(([id]) => [id, []]));
+  const alts = new Map();
   for (const [k, versions] of index(items)) {
-    const t = k.split(' ');
-    if (!t.some(w => FOOTBALL.includes(w)) || t.some(w => NOT_FOOTBALL.includes(w))) continue;
-    const vis = versions.filter(visible);
-    if (vis.length) out.push({ ...vis[0], versions: versions.length });
+    const sport = sportOf(k);
+    if (!sport) continue;
+    const es = versions.filter(it => isSpanishSport(it, folderOf(it)));
+    for (const it of es) alts.set(it.id, es.filter(c => c !== it).slice(0, MAX).map(c => c.id));
+    const vis = es.filter(visible);
+    if (vis.length) out.get(sport).push({ ...vis[0], versions: es.length });
   }
   const label = it => words(it.name).filter(w => !QUALITY.has(w) && !COUNTRY.has(w)).join(' ');
-  return out.sort((a, b) => label(a).localeCompare(label(b), 'es', { numeric: true }));
+  for (const a of out.values()) a.sort((a, b) => label(a).localeCompare(label(b), 'es', { numeric: true }));
+  return { groups: out, alts };
 }
