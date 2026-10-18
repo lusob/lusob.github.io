@@ -2,8 +2,8 @@
 // before now), a red line at the current time. A programme on now plays its channel; a later one
 // opens the channel's guide (to record it).
 
-import { esc, initials } from './ui.js?v=20261018a';
-import { hhmm } from './epg.js?v=20261018a';
+import { esc, initials } from './ui.js?v=20261018b';
+import { hhmm } from './epg.js?v=20261018b';
 
 const PX = 4;               // px per minute (240 px per hour)
 const SPAN = 12 * 60;       // minutes shown
@@ -26,9 +26,12 @@ export class Grid {
     setInterval(() => { if (!el.hidden) this.tick(); }, 60e3);
   }
 
-  show(items) {
-    this.itemsTotal = items.length;
-    this.items = items.slice(0, MAX);
+  // groups: [{ item, all: [its versions] }], one row each (the versions share the programmes).
+  show(groups) {
+    this.itemsTotal = groups.length;
+    groups = groups.slice(0, MAX);
+    this.items = groups.map(g => g.item);
+    this.versions = groups.map(g => g.all);
     this.ctx.wantEpg(this.items.slice(0, 60));
     this.draw(true);
   }
@@ -55,7 +58,10 @@ export class Grid {
     for (let t = t0; t < t1; t += 1800) head += `<div class="g-tick" style="left:${x(t)}px">${hhmm(t)}</div>`;
     this.progs = [];
     const rows = this.items.map((it, i) => {
-      const all = this.ctx.guide(it) || [];
+      let all = this.ctx.guide(it);
+      for (const v of this.versions[i]) if (!all?.length) all = this.ctx.guide(v);
+      all ||= [];
+      const n = this.versions[i].length;
       const progs = this.progs[i] = all.filter(p => p.end > t0 && p.start < t1);
       const cells = progs.map((p, j) => {
         const on = p.start <= now && p.end > now, past = p.end <= now;
@@ -63,7 +69,7 @@ export class Grid {
           <span class="g-pt">${esc(p.title || 'Sin título')}</span><span class="g-pm">${hhmm(p.start)}–${hhmm(p.end)}</span></button>`;
       }).join('');
       return `<div class="g-line">
-        <button class="gcell gch" data-i="${i}" title="${esc(it.name)}"><span class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span><span class="g-name">${esc(it.name)}</span></button>
+        <button class="gcell gch" data-i="${i}" title="${esc(it.name)}"><span class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span><span class="g-nm"><span class="g-name">${esc(it.name)}</span>${n > 1 ? `<small class="g-vers">${n} versiones</small>` : ''}</span></button>
         <div class="g-track" style="width:${SPAN * PX}px">${cells || `<button class="gcell none" data-i="${i}" style="left:0;width:${SPAN * PX - 2}px"><span class="g-pt">Sin guía · toca para ver el canal</span></button>`}</div>
       </div>`;
     }).join('');

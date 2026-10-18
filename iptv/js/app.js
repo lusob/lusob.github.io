@@ -1,16 +1,16 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018a';
-import * as store from './store.js?v=20261018a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018a';
-import { Player } from './player.js?v=20261018a';
-import { Epg, hhmm } from './epg.js?v=20261018a';
-import { Grid } from './grid.js?v=20261018a';
-import { Mosaic } from './mosaic.js?v=20261018a';
-import { initRemote } from './remote.js?v=20261018a';
-import { autoBackups, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018a';
-import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261018a';
-import { Zapper } from './zap.js?v=20261018a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018b';
+import * as store from './store.js?v=20261018b';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018b';
+import { Player } from './player.js?v=20261018b';
+import { Epg, hhmm } from './epg.js?v=20261018b';
+import { Grid } from './grid.js?v=20261018b';
+import { Mosaic } from './mosaic.js?v=20261018b';
+import { initRemote } from './remote.js?v=20261018b';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018b';
+import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261018b';
+import { Zapper } from './zap.js?v=20261018b';
 
-const VERSION = '2026-10-18a';
+const VERSION = '2026-10-18b';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -889,7 +889,7 @@ function refreshItems(resetScroll) {
     mosaic.hide();
     mosaic.source = null;
     itemList.set(list, resetScroll);
-    grid.show(list.filter(it => !it.prog));
+    grid.show(groupVersions(list.filter(it => !it.prog)));
     if (!epg?.pub && settings.epg) epg?.guides().then(() => grid.refresh());
   } else if (useMosaic) {
     if (mosaic.source !== list) { mosaic.source = list; mosaic.show(list); }

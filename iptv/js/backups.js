@@ -83,6 +83,20 @@ export function autoBackups(ch, items) {
   return (index(items).get(k) || []).filter(c => c.id !== ch.id).slice(0, MAX).map(c => c.id);
 }
 
+// One entry per channel among `items` (its preferred version, in the place of the first one seen):
+// [{ item, all: [versions, preferred first] }]. Nameless keys stay on their own.
+export function groupVersions(items) {
+  const groups = new Map(), out = [];
+  for (const it of items) {
+    const k = channelKey(it.name) || '#' + it.id;
+    let g = groups.get(k);
+    if (!g) { groups.set(k, g = { item: it, all: [] }); out.push(g); }
+    g.all.push(it);
+  }
+  for (const g of out) if (g.all.length > 1) g.item = (g.all = [...g.all].sort(newest))[0];
+  return out;
+}
+
 // Spanish Movistar+ / DAZN sports channels, one entry per channel (its newest version; the
 // others become its backups), in one folder per sport.
 export const SPORTS = [
