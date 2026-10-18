@@ -22,6 +22,11 @@ export function initRemote(ctx) {
   function setZone(z) {
     zone = z;
     document.body.classList.toggle('kbd', !!z);
+    // Driven by a remote on a non-touch screen of TV size (CSS px): treat it as a TV from now on.
+    if (z && !matchMedia('(pointer: coarse)').matches && innerHeight <= 800 && !document.documentElement.classList.contains('tv')) {
+      document.documentElement.classList.add('tv');
+      try { localStorage.setItem('iptv-tv', '1'); } catch {}
+    }
     folderList.setCursor(folderList.cursor ?? 0, z === 'folders');
     if (z !== 'items') { itemList.setCursor(itemList.cursor ?? 0, false); clearTile(); }
     if (z === 'items') enterItems();

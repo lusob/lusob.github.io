@@ -440,3 +440,9 @@ body.kbd :focus, dialog :focus-visible, #player :focus-visible { outline: 3px so
   .gcell.gch .logo { display: none; }
   .g-name { font-size: 13px; }
 }
+
+/* ---------- TV (html.tv): the screen is big but its CSS size small, so dialogs and the guide shrink ---------- */
+html.tv dialog > .card { zoom: .68; max-height: calc((100vh - 24px) / .68); overflow-y: auto; }
+html.tv #gBody { max-height: calc(100vh / .68 - 230px); }
+html.tv .g-row { min-height: 52px; padding-top: 4px; padding-bottom: 4px; }
+html.tv #grid { zoom: .68; }
