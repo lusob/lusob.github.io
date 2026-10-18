@@ -3,16 +3,18 @@
 //   folders; OK plays, Back / Right closes.
 // - Up / Down ("pilot") browses the neighbouring channels in a translucent footer with their
 //   programme; nothing changes until OK.
+// - Right (with the footer shown) or 0: back to the channel watched before.
 
-import { esc, initials, VList } from './ui.js?v=20261018f';
-import { hhmm } from './epg.js?v=20261018f';
+import { esc, initials, VList } from './ui.js?v=20261018g';
+import { hhmm } from './epg.js?v=20261018g';
 
 const PILOT_HIDE = 6000;   // ms without keys before the footer goes away (without switching)
 const INFO_HIDE = 4000;    // footer shown briefly after every channel change
 
 export class Zapper {
   // ctx: { player, epg() → Epg | null, enabled() → bool, folders() → [{ id, name, count }],
-  //        folderItems(id) → Promise<items>, play(items, index, title, folderId) }
+  //        folderItems(id) → Promise<items>, play(items, index, title, folderId),
+  //        lastName() → name of the channel watched before | '', goLast() }
   constructor(ctx) {
     this.ctx = ctx;
     const root = ctx.player.root;
@@ -150,7 +152,7 @@ export class Zapper {
           <div class="bar"><i style="width:${Math.round(e.progress * 100)}%"></i></div>` : `<div class="pl-epg dim">${e ? 'Sin información de programación' : 'Cargando programación…'}</div>`}
         ${e?.next ? `<div class="pl-next dim">Después <b>${hhmm(e.next.start)}</b> ${esc(e.next.title)}</div>` : ''}
       </div>
-      <div class="pl-keys dim">▲▼ canales · OK ver · ◀ lista</div>`;
+      <div class="pl-keys dim">▲▼ canales · OK ver · ◀ lista${this.ctx.lastName?.() ? `<br>▶ volver a ${esc(this.ctx.lastName())}` : ''}</div>`;
   }
 
   hidePilot() {
@@ -200,9 +202,11 @@ export class Zapper {
     }
     if (!this.ctx.enabled()) return false;
     if (k === 'ArrowUp' || k === 'ArrowDown') { this.pilot(k === 'ArrowUp' ? -1 : 1); return true; }
+    if (k === '0' && this.ctx.lastName?.()) { this.hidePilot(); this.ctx.goLast(); return true; }
     if (k === 'ArrowLeft') { this.openChans(); return true; }
     if (this.pilotOn) {
       if (k === 'Enter') { this.go(); return true; }
+      if (k === 'ArrowRight' && this.ctx.lastName?.()) { this.hidePilot(); this.ctx.goLast(); return true; }
       if (isBack || k === 'ArrowRight') { this.hidePilot(); return isBack; }
       return false;
     }

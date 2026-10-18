@@ -16,14 +16,20 @@ export function initRemote(ctx) {
 
   const topButtons = () => [...document.querySelectorAll('.top button, .top input, .pane-head button')].filter(shown);
   // The horizontal guide moves like the mosaic (its cells are the tiles).
-  const mode = () => !ctx.seriesEl.hidden ? 'series' : !ctx.mosaicEl.hidden || !ctx.gridEl?.hidden ? 'mosaic' : 'list';
-  const tileBox = () => !ctx.gridEl?.hidden ? [ctx.gridEl, '.gcell'] : [ctx.mosaicEl, '.tile'];
+  // So do the cards of the home page.
+  const home = () => !ctx.homeEl.hidden;
+  const mode = () => home() ? 'mosaic' : !ctx.seriesEl.hidden ? 'series' : !ctx.mosaicEl.hidden || !ctx.gridEl?.hidden ? 'mosaic' : 'list';
+  const tileBox = () => home() ? [ctx.homeEl, '.hcard'] : !ctx.gridEl?.hidden ? [ctx.gridEl, '.gcell'] : [ctx.mosaicEl, '.tile'];
 
   function setZone(z) {
+    if (z === 'folders' && home()) z = 'items';   // the home page has no folders
     zone = z;
     document.body.classList.toggle('kbd', !!z);
-    // Driven by a remote on a non-touch screen of TV size (CSS px): treat it as a TV from now on.
-    if (z && !matchMedia('(pointer: coarse)').matches && innerHeight <= 800 && !document.documentElement.classList.contains('tv')) {
+    // Driven by a remote on a non-touch screen of TV size (CSS px): treat it as a TV from now on
+    // (unless a size was chosen in Ajustes).
+    let scale = '';
+    try { scale = localStorage.getItem('iptv-scale') || ''; } catch {}
+    if (z && !scale && !matchMedia('(pointer: coarse)').matches && innerHeight <= 800 && !document.documentElement.classList.contains('tv')) {
       document.documentElement.classList.add('tv');
       try { localStorage.setItem('iptv-tv', '1'); } catch {}
     }
@@ -54,7 +60,7 @@ export function initRemote(ctx) {
   // ---- mosaic tiles (geometric navigation)
   const tiles = () => { const [el, sel] = tileBox(); return [...el.querySelectorAll(sel)].filter(t => t.offsetParent !== null); };
   const curTile = () => { const [el, sel] = tileBox(); return el.querySelector(sel + '.kfocus'); };
-  function clearTile() { document.querySelectorAll('.tile.kfocus, .gcell.kfocus').forEach(t => t.classList.remove('kfocus')); }
+  function clearTile() { document.querySelectorAll('.tile.kfocus, .gcell.kfocus, .hcard.kfocus').forEach(t => t.classList.remove('kfocus')); }
   function focusTile(t) {
     if (!t) return;
     clearTile();
@@ -96,6 +102,25 @@ export function initRemote(ctx) {
     const typing = document.activeElement?.matches?.('input[type=text], input[type=search], input[type=password], input:not([type]), input[type=datetime-local]');
     if (k === 'Backspace' && typing) return;
 
+    // "Starting now" notice: its buttons take the keys while one of them has the focus.
+    const rem = document.getElementById('remind');
+    if (!rem.hidden && rem.contains(document.activeElement)) {
+      if (isBack) { e.preventDefault(); document.getElementById('remindX').click(); }
+      else if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); moveFocus(focusables(rem), k === 'ArrowLeft' ? -1 : 1); }
+      else if (k === 'ArrowUp' || k === 'ArrowDown') { e.preventDefault(); document.activeElement.blur(); }
+      return;
+    }
+
+    // Recent searches under the search box.
+    const recent = document.getElementById('recentQ');
+    if (!recent.hidden && recent.contains(document.activeElement)) {
+      const btns = focusables(recent), i = btns.indexOf(document.activeElement);
+      if (isBack || (k === 'ArrowUp' && i <= 0)) { e.preventDefault(); document.getElementById('search').focus(); }
+      else if (k === 'ArrowUp' || k === 'ArrowDown') { e.preventDefault(); moveFocus(btns, k === 'ArrowUp' ? -1 : 1); }
+      else if (k === 'ArrowLeft' || k === 'ArrowRight') e.preventDefault();
+      return;
+    }
+
     // Dialogs: move between their controls.
     const dlg = document.querySelector('dialog[open]');
     if (dlg) {
@@ -112,7 +137,7 @@ export function initRemote(ctx) {
     if (player.isOpen) {
       player.wake();
       const menu = player.menu;
-      const bar = [...player.root.querySelectorAll('.pbar button, #pCu button, #pRetry, #pPlay')].filter(shown);
+      const bar = [...player.root.querySelectorAll('.pbar button, #pCu button, #pFail button, #pPlay')].filter(shown);
       // Playback refused by the browser: any OK starts it (a key press counts as permission).
       if (player.blocked && (k === 'Enter' || k === ' ' || k === 'MediaPlayPause' || k === 'MediaPlay')) {
         e.preventDefault();
@@ -164,7 +189,9 @@ export function initRemote(ctx) {
         moveFocus(topButtons(), k === 'ArrowLeft' ? -1 : 1);
         return;
       }
-      if (k === 'Enter' || k === 'ArrowDown') { e.preventDefault(); document.activeElement.blur(); setZone(itemList.items.length ? 'items' : 'folders'); }
+      const el2 = document.activeElement;
+      if (k === 'ArrowDown' && !el2.value && !recent.hidden) { e.preventDefault(); focusables(recent)[0]?.focus(); }
+      else if (k === 'Enter' || k === 'ArrowDown') { e.preventDefault(); el2.blur(); setZone(home() || itemList.items.length ? 'items' : 'folders'); }
       else if (k === 'Escape') document.activeElement.blur();
       return;
     }
@@ -175,6 +202,13 @@ export function initRemote(ctx) {
       if (!ARROWS.has(k)) return;
       e.preventDefault();
       setZone(ctx.narrow() && document.body.classList.contains('show-items') ? 'items' : 'folders');
+      return;
+    }
+    // Remote back on the home page: up to the tabs (another Back leaves the app as usual).
+    if (zone === 'items' && home() && isBack) {
+      e.preventDefault();
+      setZone('top');
+      topButtons()[0]?.focus();
       return;
     }
     e.preventDefault();
@@ -212,7 +246,7 @@ export function initRemote(ctx) {
       if (k === 'Enter') curTile()?.click();
       else if (!moveTile(k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0, k === 'ArrowUp' ? -1 : k === 'ArrowDown' ? 1 : 0)) {
         if (k === 'ArrowLeft') { if (ctx.narrow()) ctx.showFolders(); setZone('folders'); }
-        else if (k === 'ArrowUp') { setZone('top'); [...document.querySelectorAll('.pane-head button')].filter(shown).pop()?.focus(); }
+        else if (k === 'ArrowUp') { setZone('top'); ([...document.querySelectorAll('.pane-head button')].filter(shown).pop() || topButtons()[0])?.focus(); }
       }
       return;
     }

@@ -45,6 +45,8 @@ def parse(page):
         stage = attr(det, r'</a>\s*<span title="([^"]*)"')
         home = attr(row, r'<td class="local[^"]*">.*?<span title="([^"]*)"')
         away = attr(row, r'<td class="visitante[^"]*">.*?<span title="([^"]*)"')
+        # Crests: "https://static.futbolenlatv.com/img/32/20140812072902-deportivo-merlo.webp" → its name
+        crest = lambda cls: attr(row, r'<td class="' + cls + r'[^"]*">(?:(?!</td>).)*?<img [^>]*\bsrc="https?://static\.futbolenlatv\.com/img/32/([\w.-]+?)\.(?:webp|png)"')
         single = text(attr(row, r'<span class="eventoUnico">(.*?)</span>'))
         # Every channel of the list, linked ones too ("LALIGA TV Hypermotion (M56 O120): VER PARTIDO")
         lst = attr(row, r'<ul class="listaCanales">(.*?)</ul>')
@@ -62,6 +64,11 @@ def parse(page):
             ev['stage'] = stage
         if home:
             ev['home'], ev['away'] = home, away
+            hi, ai = crest('local'), crest('visitante')
+            if hi:
+                ev['hi'] = hi
+            if ai:
+                ev['ai'] = ai
         else:
             ev['title'] = single
         events.append(ev)

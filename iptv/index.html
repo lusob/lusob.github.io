@@ -6,12 +6,15 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261018f">
-  <!-- TV browsers (big screen at a small CSS size): whole UI scaled down, see html.tv in app.css -->
-  <script>try { if (/Android ?TV|GoogleTV|BRAVIA|\bAFT|SMART-?TV|SmartTV|Web0S|webOS|NetCast|Tizen|HbbTV|CrKey|\bTV\b/i.test(navigator.userAgent) || localStorage.getItem('iptv-tv') === '1') document.documentElement.classList.add('tv'); } catch {}</script>
+  <link rel="stylesheet" href="css/app.css?v=20261018g">
+  <!-- Interface size (Ajustes): small = html.tv, big = html.big (see app.css). Automatic: TV browsers
+       (big screen at a small CSS size) get the small one. -->
+  <script>try { const z = localStorage.getItem('iptv-scale') || '', c = document.documentElement.classList;
+    if (z === 's' || (!z && (/Android ?TV|GoogleTV|BRAVIA|\bAFT|SMART-?TV|SmartTV|Web0S|webOS|NetCast|Tizen|HbbTV|CrKey|\bTV\b/i.test(navigator.userAgent) || localStorage.getItem('iptv-tv') === '1'))) c.add('tv');
+    else if (z === 'l') c.add('big'); } catch {}</script>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261018f"></script>
+  <script type="module" src="js/app.js?v=20261018g"></script>
 </head>
 <body>
 
@@ -45,16 +48,21 @@
   <section id="main" class="view" hidden>
     <header class="top">
       <nav class="tabs" role="tablist">
+        <button data-tab="home" role="tab">Inicio</button>
         <button data-tab="live" role="tab">Directo</button>
         <button data-tab="vod" role="tab">Películas</button>
         <button data-tab="series" role="tab">Series</button>
         <button data-tab="agenda" role="tab">Agenda</button>
       </nav>
       <button id="recBanner" hidden></button>
-      <input id="search" type="search" placeholder="Buscar" autocomplete="off" spellcheck="false">
+      <div class="search-box">
+        <input id="search" type="search" placeholder="Buscar canales, partidos, programas…" autocomplete="off" spellcheck="false">
+        <div id="recentQ" hidden></div>
+      </div>
       <button id="refresh" class="icon" title="Actualizar listas" aria-label="Actualizar">⟳</button>
       <button id="settingsBtn" class="icon" title="Ajustes" aria-label="Ajustes">⚙</button>
     </header>
+    <div id="home" hidden></div>
     <div class="panes">
       <aside id="folders" class="pane"></aside>
       <main id="itemsPane" class="pane">
@@ -63,6 +71,7 @@
           <h2 id="listTitle"></h2>
           <span id="listCount" class="muted"></span>
           <span class="spacer"></span>
+          <button id="sortBtn" class="icon txt" hidden>⇅ Ordenar</button>
           <button id="mineBtn" class="icon txt" hidden>Mostrar todos<span id="mineCount"></span></button>
           <button id="deadBtn" class="icon txt" hidden>Ocultar sin señal<span id="deadCount"></span></button>
           <button id="gridBtn" class="icon txt" title="Guía de la carpeta" aria-label="Guía de la carpeta" hidden>☰ Guía</button>
@@ -86,6 +95,7 @@
     <video id="video" controls playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
     <div class="pbar">
       <button id="pClose" class="icon" aria-label="Cerrar">✕</button>
+      <button id="pLast" class="icon txt" aria-label="Volver al canal anterior" hidden>⇆ Anterior</button>
       <button id="pList" class="icon" aria-label="Lista de canales" hidden>☰</button>
       <div class="ptext">
         <div id="pTitle"></div>
@@ -117,7 +127,13 @@
       <button id="cuLive" class="icon txt" hidden>Directo</button>
     </div>
     <div id="pMsg"></div>
-    <button id="pRetry" class="primary" hidden>Reintentar</button>
+    <div id="pFail" hidden>
+      <button id="pRetry" class="primary">Reintentar</button>
+      <button id="pOther" hidden>⇄ Probar otra versión</button>
+      <button id="pChoose" hidden>☰ Elegir otro canal</button>
+      <button id="pQuit">✕ Cerrar</button>
+    </div>
+    <div id="pGest" hidden></div>
     <button id="pPlay" class="primary" hidden>▶ Reproducir</button>
     <div id="pMenu" hidden></div>
     <div id="pilot" hidden></div>
@@ -136,6 +152,21 @@
     <form method="dialog" class="card">
       <h2>Ajustes</h2>
       <div id="accountInfo" class="muted"></div>
+      <label>Tamaño de la interfaz
+        <select id="scaleInput">
+          <option value="">Automático (más pequeño en la tele)</option>
+          <option value="s">Pequeño</option>
+          <option value="m">Normal</option>
+          <option value="l">Grande</option>
+        </select>
+      </label>
+      <label class="check"><input id="vodInput" type="checkbox"> Mostrar Películas y Series</label>
+      <label class="check" id="autoRecRow"><input id="autoRecInput" type="checkbox"> Grabar en la Raspberry los partidos de mis equipos</label>
+      <div class="actions">
+        <button type="button" id="foldersBtn">Carpetas visibles…</button>
+        <button type="button" id="sportsBtn">Deportes de la agenda…</button>
+        <button type="button" id="teamsBtn">Mis equipos…</button>
+      </div>
       <label>Buffer inicial
         <select id="bufferInput">
           <option value="5">5 s (menos retraso)</option>
@@ -275,6 +306,38 @@
       </div>
     </form>
   </dialog>
+
+  <!-- Actions of a match / programme -->
+  <dialog id="menuDialog">
+    <div class="card">
+      <h2 id="menuTitle"></h2>
+      <p id="menuSub" class="hint"></p>
+      <div id="menuList" class="menu-list"></div>
+      <div class="actions"><button id="menuClose">Cerrar</button></div>
+    </div>
+  </dialog>
+
+  <!-- Checklists: visible folders, agenda sports, favourite teams -->
+  <dialog id="checkDialog">
+    <form method="dialog" class="card">
+      <h2 id="checkTitle"></h2>
+      <p id="checkHint" class="hint"></p>
+      <div id="checkQuick" class="actions"></div>
+      <input id="checkSearch" type="search" placeholder="Filtrar" autocomplete="off" spellcheck="false">
+      <div id="checkList" class="check-list"></div>
+      <div class="actions">
+        <button value="save" class="primary">Guardar</button>
+        <button value="cancel" formnovalidate>Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Reminder: a programme or match is starting -->
+  <div id="remind" hidden>
+    <div id="remindText"></div>
+    <button id="remindGo" class="primary">▶ Ver</button>
+    <button id="remindX" class="icon" aria-label="Descartar">✕</button>
+  </div>
 
   <div id="loading" hidden><div class="spinner"></div><span id="loadingText"></span></div>
   <div id="toast" hidden></div>

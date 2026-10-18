@@ -1,16 +1,17 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018f';
-import * as store from './store.js?v=20261018f';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018f';
-import { Player } from './player.js?v=20261018f';
-import { Epg, hhmm } from './epg.js?v=20261018f';
-import { Grid } from './grid.js?v=20261018f';
-import { Mosaic } from './mosaic.js?v=20261018f';
-import { initRemote } from './remote.js?v=20261018f';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018f';
-import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261018f';
-import { Zapper } from './zap.js?v=20261018f';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018g';
+import * as store from './store.js?v=20261018g';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018g';
+import { Player } from './player.js?v=20261018g';
+import { Epg, hhmm } from './epg.js?v=20261018g';
+import { Grid } from './grid.js?v=20261018g';
+import { Mosaic } from './mosaic.js?v=20261018g';
+import { initRemote } from './remote.js?v=20261018g';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018g';
+import { Agenda, eventRow, channelVariants, matchTitle, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261018g';
+import { Zapper } from './zap.js?v=20261018g';
+import { initTouch } from './touch.js?v=20261018g';
 
-const VERSION = '2026-10-18f';
+const VERSION = '2026-10-18g';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -33,7 +34,9 @@ let gridOn = false;   // horizontal guide of the folder instead of the list
 let playerKind = '';           // 'live' | 'vod' | 'series'
 const seriesCache = new Map();
 const ui = Object.assign({ tab: 'live', folder: {} }, store.get('ui', {}));
-const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 1, epg: true, cuShift: 0, fit: 'contain', autoFs: true }, store.get('settings', {}));
+// vod: Películas / Series tabs (hidden: the provider stopped sending them); autoRec: record the
+// favourite teams' matches on the Pi; hideSports: agenda sports not shown.
+const settings = Object.assign({ buffer: 10, bufferMax: 60, scan: 1, epg: true, cuShift: 0, fit: 'contain', autoFs: true, vod: false, autoRec: false, hideSports: [] }, store.get('settings', {}));
 if (!settings.v2) { settings.scan = 1; settings.v2 = true; }   // mosaic now captures after 1 s by default
 if (!settings.v3) { settings.fit = 'contain'; settings.v3 = true; }   // zoom cut the channel logos: show the whole picture
 ui.hideDead ??= false;
@@ -64,18 +67,24 @@ const zap = new Zapper({
   folderItems: zapItems,
   folderOf: it => folderName(it, 'live'),
   play: async (items, i, title, folderId) => { if (await confirmBusy()) openLive(items, i, title, folderId); },
+  lastName: () => prevCh && player.current?.id !== prevCh.item.id ? prevCh.item.name : '',
+  goLast: () => goLast(),
 });
+player.onChoose = () => zap.openChans();
+initTouch(player, { zapOn: () => zap.ctx.enabled(), openList: () => setTimeout(() => zap.openChans(), 60) });
 
 const grid = new Grid($('#grid'), {
   guide: it => epg?.byName(it.name) || epg?.cache.get(it.id)?.list || null,
   wantEpg: items => { if (settings.epg) epg?.want(items.map(i => i.id)); },
   play: (items, i) => confirmBusy().then(ok => { if (ok) openLive(items, i, $('#listTitle').textContent, query ? null : ui.folder.live); }),
-  later: (it, p) => openGuide(it, p.start),
+  later: (it, p) => progMenu(it, p),
+  mark: (it, p) => (reminderAt(it.id, p.start) ? '🔔 ' : '') + (recList().some(r => r.ch === it.id && r.prog === p.start) ? '⏺ ' : ''),
 });
 
 const remote = initRemote({
   folderList, itemList, player, zap,
   mosaicEl: $('#mosaic'),
+  homeEl: $('#home'),
   gridEl: $('#grid'),
   seriesEl: $('#series'),
   openFolder: i => onFolderClick(folderList.items[i], i, null),
@@ -157,7 +166,7 @@ function startSession(creds, info = null) {
   loadFavs();
   showView('main');
   if (!info) api.login().catch(() => {});
-  selectTab(ui.tab in TYPES || ui.tab === 'agenda' ? ui.tab : 'live');
+  selectTab('home');   // the app always opens on the home page
 }
 
 function logout() {
@@ -178,6 +187,10 @@ const saveRecs = () => store.set('rec:' + account, recs);
 
 function loadFavs() {
   backups = store.get('bk:' + account, {});
+  hiddenF = new Set(store.get('hideF:' + account, []));
+  hiddenVer++;
+  reminders = store.get('remind:' + account, []);
+  hist = store.get('hist:' + account, []);
   aliases = store.get('alias:' + account, {});
   recs = store.get('rec:' + account, []);
   const raw = store.get('fav:' + account, {});
@@ -538,6 +551,22 @@ function build(src, partial = null) {
 }
 
 const visItems = d => unlocked ? d.items : d.safeItems;
+
+// Live folders hidden in Ajustes (per account): out of the folder list, «Todo» and the search
+// (their channels still play from the agenda and as backups).
+let hiddenF = new Set(), hiddenVer = 0, shownCache = null;
+function shownItems(d) {
+  const vis = visItems(d);
+  if (d !== data.live || !hiddenF.size) return vis;
+  if (shownCache?.vis !== vis || shownCache.ver !== hiddenVer) {
+    shownCache = { vis, ver: hiddenVer, list: vis.filter(it => !it.cats.length || it.cats.some(c => !hiddenF.has(c))) };
+  }
+  return shownCache.list;
+}
+const folderShown = (type, f) => type !== 'live' || !hiddenF.has(f.id);
+
+// Favourites in the order chosen (⇅ Ordenar), newest marked last.
+const favList = type => [...favs[type].items].map(id => data[type]?.byId.get(id)).filter(it => it && (unlocked || !it.hide));
 const folderItems = f => unlocked ? f.items : f.safe;
 const folderDate = f => unlocked ? f.date : f.safeDate;
 const pending = (d, f) => !!d.partial && !d.partial.loaded.has(f.id) && (unlocked || !f.adult);   // not loaded yet
@@ -681,8 +710,172 @@ $('#aliasSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.
 $('#aliasResults').addEventListener('click', e => { const b = e.target.closest('[data-pick]'); if (b) setAlias(b.dataset.pick); });
 $('#aliasClear').addEventListener('click', () => setAlias(null));
 
-// By default only what can be played here; «Mostrar todos» adds the rest, dimmed.
-const agendaEvents = () => !ui.agendaAll ? agenda.events.filter(e => eventChannels(e).some(c => c.item)) : agenda.events;
+// By default only what can be played here; «Mostrar todos» adds the rest, dimmed. Never the sports hidden in Ajustes.
+const sportShown = e => !settings.hideSports?.includes(e.sport);
+const playable = e => eventChannels(e).some(c => c.item);
+const agendaEvents = () => agenda.events.filter(e => sportShown(e) && (ui.agendaAll || playable(e)));
+const eventName = e => e.home ? `${e.home} – ${e.away}` : e.title;
+
+// ---- favourite teams (all accounts): their matches stand out, «★ Mis equipos», optional recording
+let teams = store.get('teams', []);
+let teamKeys = new Set(teams.map(norm));
+const isTeam = n => !!n && teamKeys.has(norm(n));
+const isMine = e => isTeam(e.home) || isTeam(e.away);
+function setTeams(list) {
+  teams = [...new Set(list)];
+  teamKeys = new Set(teams.map(norm));
+  store.set('teams', teams);
+  eventChanCache.clear();
+  if (ui.tab === 'agenda') { renderFolders(); refreshItems(false); }
+  if (ui.tab === 'home') renderHome();
+  autoRecTeams();
+}
+function toggleTeam(n) {
+  const on = !isTeam(n);
+  setTeams(on ? [...teams, n] : teams.filter(t => norm(t) !== norm(n)));
+  toast(on ? `Sigues a ${n}: sus partidos salen en ★ Mis equipos y en Inicio` : `Ya no sigues a ${n}`, 3500);
+}
+
+// Recording of a match on the Pi (the first playable channel, the others as backups).
+const eventRec = e => piRecs.find(r => r.prog === e.t && r.title === eventName(e) && r.state !== 'failed');
+function recEvent(e, announce = true) {
+  const chans = eventChannels(e).filter(c => c.item);
+  if (!chans.length) { toast('Ninguno de sus canales está en tu lista', 3000); return null; }
+  const main = chans[0].item, now = Date.now() / 1000;
+  const bk = [...new Set([...chans.slice(1).map(c => c.item.id), ...backupIds(main.id)])].filter(id => id !== main.id);
+  return saveRec({ ch: main.id, title: eventName(e), prog: e.t, start: Math.max(now, e.t - PAD_START), end: e.end + PAD_END, backups: bk }, announce);
+}
+
+// The favourite teams' matches of the next 2 days are scheduled on the Pi when the app sees them
+// (once each: deleting one does not bring it back). Never two at once: one connection.
+let autoRecBusy = false;
+async function autoRecTeams() {
+  if (autoRecBusy || !settings.autoRec || !recorder || !teams.length || !data.live || !agenda.events.length) return;
+  autoRecBusy = true;
+  try {
+    const now = Date.now() / 1000, key = 'autoRec:' + account;
+    const done = new Set(store.get(key, []));
+    for (const e of agenda.events) {
+      const k = `${e.t}|${eventName(e)}`;
+      if (!isMine(e) || e.end <= now || e.t > now + 2 * DAY || done.has(k) || eventRec(e) || !playable(e)) continue;
+      const start = e.t - PAD_START, end = e.end + PAD_END;
+      if (piRecs.some(r => (r.state === 'scheduled' || r.state === 'recording') && r.start < end && r.end > start)) continue;
+      done.add(k);
+      store.set(key, [...done].slice(-200));
+      if (await recEvent(e, false)) toast(`Programada la grabación de ${eventName(e)} (${dayLabel(e.t)} ${hhmm(e.t)})`, 5000);
+    }
+  } finally { autoRecBusy = false; }
+}
+
+// ---- reminders («Avisarme cuando empiece»): shown on screen when the app is open at that time
+let reminders = [];   // { id, t, title, sub, ch?, ev?: { t, name } }
+const saveReminders = () => store.set('remind:' + account, reminders);
+const reminderAt = (ch, t) => reminders.find(r => r.ch === ch && r.t === t);
+const reminderFor = e => reminders.find(r => r.ev && r.ev.t === e.t && r.ev.name === eventName(e));
+function addReminder(r) {
+  reminders = reminders.filter(x => !(x.t === r.t && x.title === r.title)).concat({ id: Math.random().toString(36).slice(2), ...r });
+  saveReminders();
+  remindersChanged();
+  toast(`Te avisaré ${dayLabel(r.t)} a las ${hhmm(r.t)} si la app está abierta`, 3500);
+}
+function removeReminder(id) {
+  reminders = reminders.filter(r => r.id !== id);
+  saveReminders();
+  remindersChanged();
+}
+function remindersChanged() {
+  if (ui.tab === 'agenda' || query) itemList.refresh();
+  if (!$('#grid').hidden) grid.refresh();
+  if (ui.tab === 'home') renderHome();
+}
+let remindShown = null, remindTimer;
+function checkReminders() {
+  const now = Date.now() / 1000;
+  const due = reminders.filter(r => r.t - 60 <= now);
+  if (!due.length) return;
+  reminders = reminders.filter(r => r.t - 60 > now);
+  saveReminders();
+  remindersChanged();
+  const r = due.filter(x => now < x.t + 1800).at(-1);
+  if (!r) return;
+  remindShown = r;
+  $('#remindText').innerHTML = `<b>🔔 Empieza ${now < r.t ? 'ya' : `a las ${hhmm(r.t)}`}</b> ${esc(r.title)}${r.sub ? ` <span class="dim">· ${esc(r.sub)}</span>` : ''}`;
+  $('#remind').hidden = false;
+  if (!matchMedia('(pointer: coarse)').matches) $('#remindGo').focus();
+  clearTimeout(remindTimer);
+  remindTimer = setTimeout(hideReminder, 3 * 60e3);
+}
+function hideReminder() {
+  $('#remind').hidden = true;
+  remindShown = null;
+  if ($('#remind').contains(document.activeElement)) document.activeElement.blur();
+}
+$('#remindX').addEventListener('click', hideReminder);
+$('#remindGo').addEventListener('click', () => {
+  const r = remindShown;
+  hideReminder();
+  if (!r) return;
+  const e = r.ev && agenda.events.find(x => x.t === r.ev.t && eventName(x) === r.ev.name);
+  if (e) return playEvent(e);
+  const ch = r.ch && liveById(r.ch);
+  if (!ch) return toast('El canal ya no está en tu lista');
+  if (player.isOpen && playerKind === 'live' && player.current?.id === ch.id) return;
+  confirmBusy().then(ok => { if (ok) openLive([ch], 0, ch.name, null); });
+});
+setInterval(checkReminders, 15000);
+
+// ---- options of a match (⋯) and of a later programme in the horizontal guide
+
+let menuFns = [];
+function showMenu(title, sub, entries) {
+  menuFns = entries.map(x => x.fn);
+  $('#menuTitle').textContent = title;
+  $('#menuSub').innerHTML = sub;
+  $('#menuSub').hidden = !sub;
+  $('#menuList').innerHTML = entries.map((x, i) => `<button type="button" data-m="${i}">${esc(x.label)}</button>`).join('');
+  $('#menuDialog').showModal();
+  $('#menuList button')?.focus();
+}
+$('#menuList').addEventListener('click', e => {
+  const b = e.target.closest('[data-m]');
+  if (!b) return;
+  $('#menuDialog').close();
+  menuFns[+b.dataset.m]?.();
+});
+$('#menuClose').addEventListener('click', () => $('#menuDialog').close());
+
+function eventMenu(e) {
+  const now = Date.now() / 1000, chans = eventChannels(e), entries = [];
+  chans.forEach((c, i) => { if (c.item) entries.push({ label: `▶ Ver en ${c.name}`, fn: () => playEvent(e, 'ch:' + i) }); });
+  if (recorder && e.end > now && playable(e)) {
+    const r = eventRec(e);
+    entries.push(r ? { label: '⏺ Grabación programada: cambiar o borrar', fn: () => editRec(r) } : { label: '⏺ Grabar en la Raspberry Pi', fn: () => recEvent(e) });
+  }
+  if (e.t > now) {
+    const r = reminderFor(e);
+    entries.push(r ? { label: '🔕 Quitar el aviso', fn: () => removeReminder(r.id) }
+      : { label: '🔔 Avisarme cuando empiece', fn: () => addReminder({ t: e.t, title: eventName(e), sub: e.comp, ev: { t: e.t, name: eventName(e) } }) });
+  }
+  if (e.home) for (const n of [e.home, e.away]) entries.push({ label: isTeam(n) ? `☆ Dejar de seguir a ${n}` : `★ Seguir a ${n}`, fn: () => toggleTeam(n) });
+  chans.forEach(c => { if (!c.item && c.raw) entries.push({ label: `Elegir qué canal de tu lista es «${c.name}»`, fn: () => editAlias(c.raw) }); });
+  showMenu(eventName(e), `${esc(e.comp)} · ${esc(dayLabel(e.t))} ${hhmm(e.t)}`, entries);
+}
+
+function progMenu(ch, p) {
+  const now = Date.now() / 1000, entries = [{ label: `▶ Ver ${ch.name} ahora`, fn: () => confirmBusy().then(ok => { if (ok) openLive([ch], 0, ch.name, null); }) }];
+  if (recorder) {
+    const r = recList().find(x => x.ch === ch.id && x.prog === p.start);
+    entries.push(r ? { label: '⏺ Grabación programada: cambiar o borrar', fn: () => editRec(r) }
+      : { label: '⏺ Grabar en la Raspberry Pi', fn: () => saveRec({ ch: ch.id, title: p.title, prog: p.start, start: Math.max(now, p.start - PAD_START), end: p.end + PAD_END, backups: backupIds(ch.id) }, true).then(() => grid.refresh()) });
+  }
+  const r = reminderAt(ch.id, p.start);
+  entries.push(r ? { label: '🔕 Quitar el aviso', fn: () => removeReminder(r.id) }
+    : { label: '🔔 Avisarme cuando empiece', fn: () => addReminder({ t: p.start, title: p.title, sub: ch.name, ch: ch.id }) });
+  entries.push({ label: '≡ Guía completa del canal', fn: () => openGuide(ch, p.start) });
+  showMenu(p.title || 'Sin título', `${esc(ch.name)} · ${esc(dayLabel(p.start))} ${hhmm(p.start)}–${hhmm(p.end)}`, entries);
+}
+
+const eventMark = e => ({ fav: isTeam, remind: !!reminderFor(e), rec: !!eventRec(e) });
 
 async function selectAgenda() {
   $('#deadBtn').hidden = true;
@@ -698,6 +891,7 @@ async function selectAgenda() {
     $('#emptyRetry').hidden = true;
   }
   await Promise.all([agenda.load(), ensureData('live').catch(() => {})]);
+  autoRecTeams();
   if (ui.tab !== 'agenda') return;
   // The guide finds the channel of matches the agenda names vaguely: redraw once it is in.
   if (epg && !epg.pub) epg.guides().then(() => { eventChanCache.clear(); if (ui.tab === 'agenda') { renderFolders(false); refreshItems(false); } });
@@ -706,27 +900,28 @@ async function selectAgenda() {
 }
 
 function renderAgendaFolders(keepScroll) {
-  folderList.set(agenda.folders(agendaEvents()), !keepScroll);
+  folderList.set(agenda.folders(agendaEvents(), { mine: teams.length ? isMine : null, compsOpen: !!ui.compsOpen }), !keepScroll);
 }
 
 function agendaFolderRow(f) {
   const active = (ui.folder.agenda || AG_NOW) === f.id && !query;
-  return `<div class="row${active ? ' active' : ''}"><div class="grow"><div class="name">${esc(f.name)}</div>
-    <div class="meta">${[`${f.count} ${f.count === 1 ? 'evento' : 'eventos'}`, f.extra].filter(Boolean).join(' · ')}</div></div></div>`;
+  const [one, many] = f.unit || ['evento', 'eventos'];
+  return `<div class="row${active ? ' active' : ''}${f.child ? ' child' : ''}"><div class="grow"><div class="name">${esc(f.name)}</div>
+    <div class="meta">${[`${f.count} ${f.count === 1 ? one : many}`, f.extra].filter(Boolean).join(' · ')}</div></div></div>`;
 }
 
 function refreshAgenda(resetScroll) {
   const evs = agendaEvents();
   let id = ui.folder.agenda || AG_NOW;
   if (id !== AG_NOW && !folderList.items.some(f => f.id === id)) id = ui.folder.agenda = AG_NOW;
-  const r = agenda.list(evs, id, query);
+  const r = agenda.list(evs, id, '', isMine);
   list = r.list;
   $('#listTitle').textContent = r.title;
   $('#listCount').textContent = list.length || '';
   const mine = $('#mineBtn');
   mine.hidden = false;
-  const now = Date.now() / 1000, next = agenda.events.filter(e => e.end > now);
-  const hidden = next.length - next.filter(e => eventChannels(e).some(c => c.item)).length;
+  const now = Date.now() / 1000, next = agenda.events.filter(e => e.end > now && sportShown(e));
+  const hidden = next.length - next.filter(playable).length;
   mine.firstChild.textContent = ui.agendaAll ? 'Ocultar no reproducibles' : 'Mostrar todos';
   mine.title = ui.agendaAll ? 'Ver solo los eventos de canales que están en tu lista' : 'Ver también los eventos de canales que no están en tu lista (atenuados)';
   $('#mineCount').textContent = hidden > 0 ? `${ui.agendaAll ? '−' : '+'}${hidden}` : '';
@@ -746,7 +941,8 @@ function refreshAgenda(resetScroll) {
   const when = agenda.updated ? new Date(agenda.updated * 1000).toLocaleString('es-ES', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) : '';
   $('#empty').hidden = !!list.length;
   $('#emptyText').textContent = agenda.error ? `No se pudo cargar la agenda: ${agenda.error}`
-    : query ? 'Sin resultados' : !agenda.events.length ? 'La agenda está vacía' : ui.agendaAll ? 'No hay eventos' : 'No hay eventos en los canales de tu lista. Pulsa «Mostrar todos» para verlos todos.';
+    : id === AG_MINE ? 'Tus equipos no tienen partidos próximos en la agenda'
+    : !agenda.events.length ? 'La agenda está vacía' : ui.agendaAll ? 'No hay eventos' : 'No hay eventos en los canales de tu lista. Pulsa «Mostrar todos» para verlos todos.';
   $('#emptyDiag').textContent = when ? `Agenda de futbolenlatv.es, actualizada el ${when}` : '';
   $('#emptyRetry').hidden = !agenda.error;
   retryAction = reload;
@@ -760,22 +956,184 @@ function playEvent(e, act) {
   if (!c) return toast('Ninguno de sus canales está en tu lista', 3000);
   // The queue: every playable channel of the event (Up / Down switches between them)
   const items = chans.map(x => x.item);
-  confirmBusy().then(ok => { if (ok) openLive(items, Math.max(0, items.indexOf(c.item)), e.home ? `${e.home} – ${e.away}` : e.title, null); });
+  confirmBusy().then(ok => { if (ok) openLive(items, Math.max(0, items.indexOf(c.item)), eventName(e), null); });
 }
+
+// ---------------------------------------------------------------- home page
+// Rows of cards: continue watching, favourite channels with what is on, the favourite teams'
+// matches, matches on now / today, recordings, reminders. Remote: the cards move like the mosaic.
+
+let hist = [];   // last things watched: { k: 'live' | 'rec', id, t, pos? (s, recordings) }
+function remember(k, id, pos) {
+  const old = hist.find(h => h.k === k && h.id === id);
+  hist = [{ k, id, t: Date.now() / 1000, ...(pos != null ? { pos } : old?.pos != null ? { pos: old.pos } : {}) }, ...hist.filter(h => h !== old)].slice(0, 20);
+  store.set('hist:' + account, hist);
+}
+
+let homeActs = [];
+async function selectHome() {
+  folderList.set([]);
+  itemList.set([]);
+  list = [];
+  $('#listTitle').textContent = '';
+  $('#listCount').textContent = '';
+  renderHome();
+  await Promise.all([ensureData('live').catch(() => {}), agenda.load()]);
+  if (ui.tab !== 'home') return;
+  autoRecTeams();
+  renderHome();
+  if (settings.epg && epg) {
+    homeWantEpg();
+    if (!epg.pub) epg.guides().then(() => { eventChanCache.clear(); if (ui.tab === 'home') renderHome(); });
+  }
+}
+
+function homeWantEpg() {
+  const ids = [...favList('live'), ...hist.filter(h => h.k === 'live').map(h => liveById(h.id)).filter(Boolean)].slice(0, 60).map(i => i.id);
+  if (ids.length) epg?.want(ids);
+}
+
+let homeTimer;
+function scheduleHome() {
+  if (homeTimer || $('#home').hidden) return;
+  homeTimer = setTimeout(() => { homeTimer = 0; if (!$('#home').hidden) renderHome(); }, 1200);
+}
+
+const logoHtml = it => `<span class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>`;
+
+function chanCard(it, key, act, label = '') {
+  const e = settings.epg && epg?.get(it.id);
+  return card(key, act, 'ch', `${logoHtml(it)}<span class="hc-body">
+      ${label ? `<span class="hc-tag">${esc(label)}</span>` : ''}
+      <span class="hc-name">${esc(it.name)}</span>
+      ${e?.now ? `<span class="hc-sub"><b>${hhmm(e.now.start)}</b> ${esc(e.now.title)}</span><span class="bar"><i style="width:${Math.round(e.progress * 100)}%"></i></span>` : '<span class="hc-sub dim">En directo</span>'}
+    </span>`);
+}
+
+function eventCard(e, key) {
+  const now = Date.now() / 1000, live = e.t <= now && e.end > now;
+  const ch = eventChannels(e).find(c => c.item);
+  return card(key, () => playEvent(e), 'ev' + (live ? ' live' : ''), `<span class="hc-body">
+      <span class="hc-tag">${live ? '<b class="ag-live">DIRECTO</b>' : `${esc(dayLabel(e.t)[0].toUpperCase() + dayLabel(e.t).slice(1))} ${hhmmOf(e.t)}`}${reminderFor(e) ? ' 🔔' : ''}${eventRec(e) ? ' ⏺' : ''} · ${esc(e.comp)}</span>
+      <span class="hc-match">${matchTitle(e, isTeam)}</span>
+      <span class="hc-sub">${ch ? `▶ ${esc(ch.name)}` : '<span class="dim">No está en tu lista</span>'}</span>
+      ${live ? `<span class="bar"><i style="width:${Math.round(elapsed(e) * 100)}%"></i></span>` : ''}
+    </span>`);
+}
+
+function recCard(r, key, pos) {
+  const dur = r.duration || 0;
+  return card(key, () => onRecClick({ ...r, rec: true }, null, pos), 'rec' + (r.state === 'recording' ? ' on-air' : ''), `<span class="hc-body">
+      <span class="hc-tag">${r.state === 'recording' ? '● Grabando' : '⏺ Grabación'}${pos ? ` · seguir en ${fmtClock(pos)}` : ''}</span>
+      <span class="hc-name">${esc(r.title || 'Sin título')}</span>
+      <span class="hc-sub dim">${esc(piStatus(r))}</span>
+      ${pos && dur ? `<span class="bar"><i style="width:${Math.round(Math.min(1, pos / dur) * 100)}%"></i></span>` : ''}
+    </span>`);
+}
+
+const fmtClock = s => { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60; return h ? `${h}:${String(m).padStart(2, '0')} h` : `${m} min`; };
+
+function card(key, act, cls, html) {
+  homeActs.push(act);
+  return `<button class="hcard ${cls}" data-h="${homeActs.length - 1}" data-key="${esc(key)}">${html}</button>`;
+}
+
+function renderHome() {
+  const el = $('#home');
+  if (ui.tab !== 'home') return;
+  // Keep the remote's card and each row's scroll across redraws
+  const focusKey = el.querySelector('.hcard.kfocus')?.dataset.key;
+  const scrolls = Object.fromEntries([...el.querySelectorAll('.h-row')].map(r => [r.dataset.sec, r.scrollLeft]));
+  homeActs = [];
+  const now = Date.now() / 1000, d = data.live, secs = [];
+  const sec = (id, title, cards, more = null) => {
+    if (!cards.length) return;
+    if (more) cards.push(card('more:' + id, more.fn, 'more', `<span class="hc-body"><span class="hc-name">${esc(more.label)} ›</span></span>`));
+    secs.push(`<section class="h-sec"><h3>${esc(title)}</h3><div class="h-row" data-sec="${id}">${cards.join('')}</div></section>`);
+  };
+
+  if (!d && !agenda.events.length) {
+    el.innerHTML = '<div class="empty-note"><span class="spinner small"></span>Cargando…</div>';
+    return;
+  }
+  // Continue watching
+  const cont = [];
+  for (const h of hist) {
+    if (h.k === 'live') {
+      const it = d && liveById(h.id);
+      if (it) cont.push(chanCard(it, 'h:' + h.id, () => confirmBusy().then(ok => { if (ok) openLive([it], 0, it.name, null); }), `Visto ${ago(h.t)}`));
+    } else if (h.k === 'rec') {
+      const r = piRecs.find(x => x.id === h.id);
+      if (r && (r.duration > 0 || r.state === 'recording')) cont.push(recCard(r, 'hr:' + h.id, h.pos));
+    }
+    if (cont.length >= 10) break;
+  }
+  sec('cont', 'Seguir viendo', cont);
+
+  // Favourite channels
+  if (d) {
+    const favItems = favList('live');
+    sec('fav', '★ Tus canales favoritos', favItems.length
+      ? favItems.slice(0, 30).map((it, i) => chanCard(it, 'f:' + it.id, () => confirmBusy().then(ok => { if (ok) openLive(favItems, i, 'Favoritos', FAV); })))
+      : [card('fav-hint', () => selectTab('live'), 'hint', '<span class="hc-body"><span class="hc-name">Aún no tienes favoritos</span><span class="hc-sub dim">Pulsa ★ en un canal de Directo para tenerlo aquí</span></span>')]);
+  }
+
+  // Matches
+  const upcoming = agenda.events.filter(e => e.end > now && sportShown(e));
+  const mine = teams.length ? upcoming.filter(isMine).slice(0, 12) : [];
+  if (teams.length) {
+    sec('teams', '★ Tus equipos', mine.length ? mine.map(e => eventCard(e, 'te:' + e.id))
+      : [card('teams-none', () => editTeams(), 'hint', `<span class="hc-body"><span class="hc-name">Sin partidos próximos</span><span class="hc-sub dim">${esc(teams.slice(0, 3).join(', '))}${teams.length > 3 ? '…' : ''}</span></span>`)],
+    { label: 'Elegir equipos', fn: () => editTeams() });
+  }
+  const shown = new Set(mine);
+  const endOfDay = new Date().setHours(23, 59, 59, 999) / 1000;
+  const today = upcoming.filter(e => !shown.has(e) && e.t < endOfDay && playable(e)).slice(0, 15);
+  sec('today', 'Partidos de hoy', today.map(e => eventCard(e, 'ev:' + e.id)), { label: 'Ver la agenda', fn: () => selectTab('agenda') });
+  if (!teams.length && agenda.events.length) {
+    sec('teams', '★ Tus equipos', [card('teams-hint', () => editTeams(), 'hint', '<span class="hc-body"><span class="hc-name">Sigue a tus equipos</span><span class="hc-sub dim">Sus partidos saldrán aquí primero (y se pueden grabar solos). Pulsa para elegirlos.</span></span>')]);
+  }
+
+  // Recordings
+  if (recorder) {
+    const rs = sortedRecs().slice(0, 12);
+    sec('recs', '⏺ Grabaciones', rs.map(r => recCard(r, 'r:' + r.id, hist.find(h => h.k === 'rec' && h.id === r.id)?.pos)), { label: 'Todas las grabaciones', fn: () => { ui.folder.live = REC; selectTab('live'); } });
+  }
+
+  // Reminders
+  const rem = reminders.filter(r => r.t > now - 1800).sort((a, b) => a.t - b.t);
+  sec('remind', '🔔 Avisos', rem.map(r => card('rm:' + r.id, () => showMenu(r.title, `${esc(r.sub || '')} · ${esc(dayLabel(r.t))} ${hhmm(r.t)}`, [{ label: '🔕 Quitar el aviso', fn: () => removeReminder(r.id) }]), 'rem',
+    `<span class="hc-body"><span class="hc-tag">${esc(dayLabel(r.t))} ${hhmm(r.t)}</span><span class="hc-name">${esc(r.title)}</span><span class="hc-sub dim">${esc(r.sub || '')}</span></span>`)));
+
+  el.innerHTML = secs.join('') || '<div class="empty-note">Nada que mostrar todavía.</div>';
+  for (const r of el.querySelectorAll('.h-row')) if (scrolls[r.dataset.sec]) r.scrollLeft = scrolls[r.dataset.sec];
+  if (focusKey) el.querySelector(`.hcard[data-key="${CSS.escape(focusKey)}"]`)?.classList.add('kfocus');
+}
+
+$('#home').addEventListener('click', e => {
+  const c = e.target.closest('.hcard');
+  if (c) homeActs[+c.dataset.h]?.();
+});
+setInterval(() => { if (!$('#home').hidden) renderHome(); }, 60000);
 
 // ---------------------------------------------------------------- tabs & folders
 
 async function selectTab(type) {
+  if ((type === 'vod' || type === 'series') && !settings.vod) type = 'home';
   ui.tab = type;
   saveUi();
   for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('active', b.dataset.tab === type);
   closeSeries();
   mosaic.hide();
   mosaic.source = null;
+  sorting = false;
+  layout();
   $('#mosaicBtn').hidden = type !== 'live';
   $('#gridBtn').hidden = type !== 'live';
   if (type !== 'live') $('#grid').hidden = true;
   $('#mineBtn').hidden = type !== 'agenda';
+  $('#sortBtn').hidden = true;
+  if (type === 'home') return selectHome();
   if (type === 'agenda') return selectAgenda();
   if (!data[type]) {
     folderList.set([]);
@@ -801,14 +1159,13 @@ function renderFolders(keepScroll = true) {
   const d = data[ui.tab];
   if (!d) return;
   const fc = favs[ui.tab].cats;
-  const fi = favs[ui.tab].items;
-  const all = visItems(d);
-  const favItems = all.filter(i => fi.has(i.id));
+  const all = shownItems(d);
+  const favItems = favList(ui.tab);
   // Partial catalog: dates are unknown until the full list arrives, keep the server order.
-  const folders = d.folders.filter(f => folderVisible(d, f));
+  const folders = d.folders.filter(f => folderVisible(d, f) && folderShown(ui.tab, f));
   if (!d.partial) folders.sort((a, b) => folderDate(b) - folderDate(a));
   const rows = [
-    { id: FAV, name: '★ Favoritos', count: favItems.length, date: favItems[0]?.added, virtual: true },
+    { id: FAV, name: '★ Favoritos', count: favItems.length, date: Math.max(0, ...favItems.map(i => i.added || 0)), virtual: true },
     { id: ALL, name: 'Todo', count: all.length, date: all[0]?.added, virtual: true },
     ...(ui.tab === 'live' && (recorder || d.anyArchive || recs.length) ? [{ id: REC, name: '⏺ Grabaciones', count: recList().length, virtual: true,
       extra: recorder?.disk?.total ? `${fmtSize(recorder.disk.free)} libres` : '' }] : []),
@@ -852,6 +1209,12 @@ async function onFolderClick(f, i, act) {
     return;
   }
   if (query) { query = ''; $('#search').value = ''; }
+  if (ui.tab === 'agenda' && f.id === AG_COMPS) {
+    ui.compsOpen = !ui.compsOpen;
+    saveUi();
+    renderFolders();
+    return;
+  }
   if (f.id === SPORT) {
     // Unfold / fold the sports; opening it also lists every channel of them
     ui.sportsOpen = !(ui.sportsOpen && ui.folder[ui.tab] === SPORT);
@@ -868,24 +1231,39 @@ async function onFolderClick(f, i, act) {
 
 // ---------------------------------------------------------------- items
 
+// Home page, or the panes (folders + list); the search always shows its results in the panes.
+function layout() {
+  const home = ui.tab === 'home' && !query;
+  $('#home').hidden = !home;
+  $('.panes').hidden = home;
+  document.body.classList.toggle('no-folders', ui.tab === 'home');
+}
+
+// Buttons of the list header that depend on the tab / folder.
+function paneButtons() {
+  const t = ui.tab, live = t === 'live' && !query;
+  $('#mosaicBtn').hidden = !live;
+  $('#gridBtn').hidden = !live;
+  $('#mineBtn').hidden = t !== 'agenda' || !!query;
+  const fav = !query && t in TYPES && (ui.folder[t] || ALL) === FAV && list.length > 1;
+  if (!fav) sorting = false;
+  $('#sortBtn').hidden = !fav;
+  $('#sortBtn').classList.toggle('on', sorting);
+  $('#sortBtn').textContent = sorting ? '✓ Hecho' : '⇅ Ordenar';
+}
+
 function refreshItems(resetScroll) {
+  layout();
+  if (query) return refreshSearch(resetScroll);
+  if (ui.tab === 'home') return;
   if (ui.tab === 'agenda') return refreshAgenda(resetScroll);
   const d = data[ui.tab];
   if (!d) return;
   const id = ui.folder[ui.tab] || ALL;
-  const all = visItems(d);
+  const all = shownItems(d);
   let title;
-  if (query) {
-    const q = norm(query);
-    list = all.filter(i => i.key.includes(q));
-    // Live: also the programmes with that title in the guide (on now or later).
-    if (ui.tab === 'live' && settings.epg && epg) {
-      if (!epg.pub) epg.guides().then(() => { if (query && norm(query) === q && ui.tab === 'live') refreshItems(false); });
-      list = list.concat(epg.search(q, all, norm).map(({ item, prog }) => ({ ...item, prog, base: item })));
-    }
-    title = `“${query}”`;
-  } else if (id === FAV) {
-    list = all.filter(i => favs[ui.tab].items.has(i.id));
+  if (id === FAV) {
+    list = favList(ui.tab);
     title = 'Favoritos';
   } else if (id === ALL) {
     list = all;
@@ -906,8 +1284,9 @@ function refreshItems(resetScroll) {
     $('#listCount').textContent = list.length ? list.length : '';
   }
   $('#itemsPane').classList.toggle('poster', ui.tab !== 'live');
+  paneButtons();
 
-  const views = ui.tab === 'live' && !series && !(id === REC && !query);
+  const views = ui.tab === 'live' && !series && id !== REC;
   const useGrid = gridOn && views;
   const useMosaic = mosaicOn && views && !useGrid;
   $('#mosaicBtn').classList.toggle('on', useMosaic);
@@ -939,8 +1318,6 @@ function refreshItems(resetScroll) {
   if (d.error) {
     text = `No se pudo cargar la lista: ${d.error}`;
     diag = d.diag;
-  } else if (query) {
-    text = p ? 'Sin resultados en las carpetas cargadas' + (p.fullLoading ? ' (el catálogo completo aún se está descargando)' : '') : 'Sin resultados';
   } else if (id === REC) {
     text = recorder ? 'Aún no hay grabaciones. Toca ≡ en un canal para abrir su guía y pulsa ⏺ en un programa (o «Programar a mano»).'
       : 'Las grabaciones de la Raspberry Pi solo se ven abriendo la app desde su dirección (la que termina en :8090) en la red de casa.';
@@ -965,6 +1342,68 @@ function refreshItems(resetScroll) {
 }
 
 let retryAction = null;
+
+// ---------------------------------------------------------------- search (everything at once)
+
+const expanded = new Set();   // result sections shown in full («Ver los N…»)
+const SEARCH_MAX = { live: 30, ev: 15, prog: 30, rec: 20, vod: 30, series: 30 };
+
+function refreshSearch(resetScroll) {
+  const q = norm(query), now = Date.now() / 1000, out = [];
+  const add = (kind, name, rows) => {
+    if (!rows.length) return;
+    const max = expanded.has(kind) ? Infinity : SEARCH_MAX[kind];
+    out.push({ sec: true, id: 'sec:' + kind, name, count: rows.length }, ...rows.slice(0, max));
+    if (rows.length > max) out.push({ more: kind, id: 'more:' + kind, name: `Ver los ${rows.length} resultados de «${name}»` });
+  };
+  const d = data.live;
+  if (d) add('live', 'Canales', shownItems(d).filter(i => i.key.includes(q)).map(it => ({ ...it, _k: 'live' })));
+  if (!agenda.events.length && !agenda.error) agenda.load().then(() => { if (query && norm(query) === q) refreshItems(false); });
+  add('ev', 'Partidos y eventos', agenda.events.filter(e => e.end > now && e.key.includes(q) && sportShown(e))
+    .sort((a, b) => !!eventChannels(b).some(c => c.item) - !!eventChannels(a).some(c => c.item) || a.t - b.t));
+  // Programmes with that title in the guide (on now or later).
+  if (d && settings.epg && epg) {
+    if (!epg.pub) epg.guides().then(() => { if (query && norm(query) === q) refreshItems(false); });
+    add('prog', 'Programas en la guía', epg.search(q, shownItems(d), norm).map(({ item, prog }) => ({ ...item, prog, base: item, _k: 'live' })));
+  }
+  add('rec', 'Grabaciones', sortedRecs().filter(r => norm(r.title || '').includes(q)));
+  for (const t of ['vod', 'series']) {
+    if (settings.vod && data[t]) add(t, TYPES[t], visItems(data[t]).filter(i => i.key.includes(q)).map(it => ({ ...it, _k: t })));
+  }
+  list = out;
+  closeSeries();
+  paneButtons();
+  $('#listTitle').textContent = `“${query}”`;
+  $('#listCount').textContent = out.filter(x => !x.sec && !x.more).length || '';
+  $('#itemsPane').classList.remove('poster');
+  $('#deadBtn').hidden = true;
+  $('#items').hidden = false;
+  $('#mosaic').hidden = true;
+  $('#grid').hidden = true;
+  mosaic.hide();
+  mosaic.source = null;
+  itemList.set(list, resetScroll);
+  if (resetScroll) remote.reset();
+  $('#empty').hidden = !!list.length;
+  $('#emptyText').textContent = 'Sin resultados';
+  $('#emptyDiag').textContent = '';
+  $('#emptyRetry').hidden = true;
+}
+
+// Recent searches: shown under the empty search box.
+let recentQ = store.get('recentQ', []);
+function pushRecent(q) {
+  q = q.trim();
+  if (q.length < 2) return;
+  recentQ = [q, ...recentQ.filter(x => norm(x) !== norm(q))].slice(0, 8);
+  store.set('recentQ', recentQ);
+}
+function showRecent() {
+  const el = $('#recentQ'), box = $('#search');
+  const show = (document.activeElement === box || el.contains(document.activeElement)) && !box.value && recentQ.length > 0;
+  el.hidden = !show;
+  if (show) el.innerHTML = '<div class="rq-title">Búsquedas recientes</div>' + recentQ.map((q, i) => `<button type="button" data-q="${i}">🕘 ${esc(q)}</button>`).join('');
+}
 
 function folderName(it, tab = ui.tab) {
   for (const c of it.cats) {
@@ -992,15 +1431,18 @@ function renderProgRow(it) {
 }
 
 function renderItemRow(it) {
+  if (it.sec) return `<div class="row sec"><span class="name">${esc(it.name)}</span><span class="muted">${it.count}</span></div>`;
+  if (it.more) return `<div class="row more"><span class="name">＋ ${esc(it.name)}</span></div>`;
   if (it.rec) return renderRecRow(it);
   if (it.prog) return renderProgRow(it);
-  if (it.ev) return eventRow(it, eventChannels(it), !String(ui.folder.agenda || '').startsWith(AG_DAY) || !!query);
+  if (it.ev) return eventRow(it, eventChannels(it), !String(ui.folder.agenda || '').startsWith(AG_DAY) || !!query, eventMark(it));
+  const k = it._k || ui.tab;
   const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL;
   const meta = [!it.versions && showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
   let sub = `<div class="meta">${meta}</div>`;
   // Football list: shortcuts to the original channels, always say which folder each one is in.
   const from = it.versions ? ` <span class="from">· 📁 ${esc(folderName(it))}${it.versions > 1 ? ` · ${it.versions} versiones` : ''}</span>` : '';
-  if (ui.tab === 'live') {
+  if (k === 'live') {
     const e = settings.epg && epg?.get(it.id);
     if (e?.now) {
       sub = `<div class="meta epg"><b>${hhmm(e.now.start)}</b> ${esc(e.now.title)}${e.next ? `<span class="dim"> · ${hhmm(e.next.start)} ${esc(e.next.title)}</span>` : ''}</div>
@@ -1010,36 +1452,60 @@ function renderItemRow(it) {
   return `<div class="row">
     <div class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
     <div class="grow"><div class="name">${esc(it.name)}${from}</div>${sub}</div>
-    ${!it.noDate && isNew(it.added) ? '<span class="badge">Nuevo</span>' : ''}
-    ${ui.tab === 'live' && it.archive ? `<span class="badge arch" title="Archivo de ${it.archive} días">⏪ ${it.archive} d</span>` : ''}
-    ${ui.tab === 'live' ? '<button class="star gbtn" data-act="guide" aria-label="Guía">≡</button>' : ''}
-    <button class="star${favs[ui.tab].items.has(it.id) ? ' on' : ''}" data-act="fav" aria-label="Favorito">★</button>
+    ${!it.noDate && isNew(it.added) && !sorting ? '<span class="badge">Nuevo</span>' : ''}
+    ${k === 'live' && it.archive ? `<span class="badge arch" title="Archivo de ${it.archive} días">⏪ ${it.archive} d</span>` : ''}
+    ${sorting ? '<button class="star gbtn" data-act="up" aria-label="Subir">▲</button><button class="star gbtn" data-act="down" aria-label="Bajar">▼</button>'
+      : `${k === 'live' ? '<button class="star gbtn" data-act="guide" aria-label="Guía">≡</button>' : ''}
+    <button class="star${favs[k].items.has(it.id) ? ' on' : ''}" data-act="fav" aria-label="Favorito">★</button>`}
   </div>`;
 }
 
+// ⇅ Ordenar (favourites): ▲ / ▼ move a favourite one place.
+let sorting = false;
+function moveFav(it, d) {
+  const t = ui.tab, arr = favList(t).map(x => x.id);
+  const i = arr.indexOf(it.id), j = i + d;
+  if (i < 0 || j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  // Hidden ones (adult, locked) keep their place at the end
+  favs[t].items = new Set([...arr, ...[...favs[t].items].filter(id => !arr.includes(id))]);
+  saveFavs();
+  refreshItems(false);
+  itemList.setCursor(j, !!itemList.showCursor);
+}
+
+$('#sortBtn').addEventListener('click', () => { sorting = !sorting; refreshItems(false); });
+
 function onItemClick(it, i, act) {
+  if (it.sec) return;
+  if (it.more) { expanded.add(it.more); return refreshItems(false); }
+  if (query) pushRecent(query);
   if (it.rec) return onRecClick(it, act);
-  if (it.ev) return playEvent(it, act);
+  if (it.ev) return act === 'menu' ? eventMenu(it) : playEvent(it, act);
   // A programme from the search: on now → watch its channel; later → its guide (to record it).
   if (it.prog) {
     if (act === 'guide' || it.prog.start > Date.now() / 1000) return openGuide(it.base, it.prog.start);
     return confirmBusy().then(ok => { if (ok) openLive([it.base], 0, it.prog.title, null); });
   }
   if (act === 'guide') return openGuide(it);
+  if (act === 'up' || act === 'down') return moveFav(it, act === 'up' ? -1 : 1);
+  const k = it._k || ui.tab;
   if (act === 'fav') {
-    toggle(favs[ui.tab].items, it.id);
+    toggle(favs[k].items, it.id);
     if ((ui.folder[ui.tab] || ALL) === FAV && !query) refreshItems(false);
     else itemList.updateRow(i);
     renderFolders();
     return;
   }
-  if (ui.tab === 'series') return openSeries(it);
-  const items = list, title = $('#listTitle').textContent;
+  if (k === 'series') return openSeries(it);
+  // The queue: the results of the same kind (the search mixes channels, matches, programmes…)
+  const items = list.filter(x => (x._k || ui.tab) === k && !x.sec && !x.more && !x.prog && !x.ev && !x.rec);
+  const at = Math.max(0, items.indexOf(it)), title = $('#listTitle').textContent;
   confirmBusy().then(ok => {
     if (!ok) return;
-    if (ui.tab === 'live') return openLive(items, i, title, query ? null : ui.folder.live);
-    playerKind = ui.tab;
-    player.open(items, i, resolveVod, favCtl(ui.tab));
+    if (k === 'live') return openLive(items, at, title, query ? null : ui.folder.live);
+    playerKind = k;
+    player.open(items, at, resolveVod, favCtl(k));
   });
 }
 
@@ -1055,9 +1521,9 @@ function openLive(items, i, title, folderId) {
 function zapFolders() {
   const d = data.live;
   if (!d) return [];
-  const fc = favs.live.cats, all = visItems(d);
-  const favCount = all.filter(i => favs.live.items.has(i.id)).length;
-  const folders = d.folders.filter(f => folderVisible(d, f));
+  const fc = favs.live.cats, all = shownItems(d);
+  const favCount = favList('live').length;
+  const folders = d.folders.filter(f => folderVisible(d, f) && folderShown('live', f));
   if (!d.partial) folders.sort((a, b) => folderDate(b) - folderDate(a));
   return [
     ...(favCount ? [{ id: FAV, name: '★ Favoritos', count: favCount }] : []),
@@ -1069,8 +1535,8 @@ function zapFolders() {
 }
 
 async function zapItems(id) {
-  if (id === FAV) return visItems(data.live).filter(i => favs.live.items.has(i.id));
-  if (id === ALL) return visItems(data.live);
+  if (id === FAV) return favList('live');
+  if (id === ALL) return shownItems(data.live);
   if (isSport(id)) return sportList(id).list;
   const f = data.live.folderById.get(id);
   if (f && pending(data.live, f)) await loadFolder('live', id);
@@ -1134,6 +1600,7 @@ function onEpg(id) {
   if (it && !$('#mosaic').hidden) mosaic.refreshInfo(it);
   if (player.isOpen && playerKind === 'live' && player.current?.id === id) updatePlayerEpg(player.current);
   if (player.isOpen) zap.onEpg(id);
+  if (ui.tab === 'home') scheduleHome();
 }
 
 function updatePlayerEpg(it) {
@@ -1145,7 +1612,21 @@ function updatePlayerEpg(it) {
     (e.next ? ` · <b>Después</b> ${esc(e.next.title)} <span class="dim">${hhmm(e.next.start)}</span>` : ''));
 }
 
+// The channel watched before (⇆ Anterior, Right in the info footer, 0) and the history of Inicio.
+let curCh = null, prevCh = null;
+function goLast() {
+  const p = prevCh;
+  if (!p) return;
+  confirmBusy().then(ok => { if (ok) openLive(p.queue, p.index, p.title, p.folder); });
+}
+$('#pLast').addEventListener('click', e => { e.stopPropagation(); goLast(); });
+
 player.onchange = it => {
+  if (playerKind === 'live' && !player.cu && liveById(it.id)) {
+    if (curCh && curCh.item.id !== it.id) prevCh = curCh;
+    curCh = { item: it, queue: player.queue, index: player.index, title: player.queueTitle, folder: player.queueFolder };
+    remember('live', it.id);
+  }
   updatePlayerButtons(it);
   zap.changed();
   if (playerKind !== 'live' || !epg) return;
@@ -1205,6 +1686,9 @@ function updatePlayerButtons(it) {
   $('#pBackup').hidden = !live;
   $('#pStart').hidden = !(live && !player.cu && now && hasArchive([it, ...backupsOf(it.id)]));
   $('#pRec').hidden = !(live && recorder && !player.cu);
+  const last = live && !player.cu && prevCh && prevCh.item.id !== it.id;
+  $('#pLast').hidden = !last;
+  if (last) $('#pLast').title = `Volver a ${prevCh.item.name}`;
 }
 
 // Record what is on screen on the Raspberry Pi and keep watching it from the recording
@@ -1421,12 +1905,13 @@ function renderRecRow(r) {
   </div>`;
 }
 
-function onRecClick(r, act) {
+function onRecClick(r, act, pos = null) {
   const saved = recList().find(x => x.id === r.id);
   if (!saved) return;
   if (act === 'edit') return editRec(saved);
   if (saved.pi) {
-    if (saved.duration > 0 || saved.state === 'recording') return playPiRec(saved);   // the player waits for the first minutes
+    // the player waits for the first minutes; from Inicio it goes on where it was left
+    if (saved.duration > 0 || saved.state === 'recording') return playPiRec(saved, pos);
     if (saved.state === 'scheduled') return toast(`Se grabará ${dayLabel(saved.start)} de ${hhmm(saved.start)} a ${hhmm(saved.end)} en la Raspberry Pi.`, 5000);
     return toast(`No se grabó: ${saved.log?.at(-1)?.[1] || 'sin señal en ningún canal'}`, 6000);
   }
@@ -1506,13 +1991,14 @@ async function savePiRec(r, announce) {
   }
 }
 
-function playPiRec(r) {
+function playPiRec(r, pos = null) {
   mosaic.stop();
   playerKind = 'rec';
+  remember('rec', r.id);
   const url = `/rec/${r.id}/index.m3u8`;
   const start = r.parts?.find(p => p.segments)?.start || r.start;
   player.open([{ ...r, name: r.title }], 0, () => ({
-    title: `⏺ ${r.title}`, fromStart: true, attempts: [['hls', url], ['native-hls', url]],
+    title: `⏺ ${r.title}`, fromStart: true, attempts: [['hls', url], ['native-hls', url]], resumeAt: pos || 0,
     // Played from the Pi's USB stick: the provider (and the channel) are not involved at all.
     texts: {
       loading: 'Abriendo la grabación de la Raspberry Pi…',
@@ -1524,6 +2010,17 @@ function playPiRec(r) {
 }
 
 const activeRec = () => piRecs.find(r => r.state === 'recording');
+
+// Where each recording was left (for «Seguir viendo»); near the end counts as seen.
+setInterval(() => {
+  if (!player.isOpen || playerKind !== 'rec' || !player.current || player.video.paused) return;
+  const t = player.video.currentTime, dur = player.video.duration;
+  const h = hist.find(x => x.k === 'rec' && x.id === player.current.id);
+  if (!h || t < 30) return;
+  const done = isFinite(dur) && dur > 0 && dur - t < 120 && player.current.state !== 'recording';
+  if (done) delete h.pos; else h.pos = Math.floor(t);
+  store.set('hist:' + account, hist);
+}, 10000);
 
 async function stopPiRec(r) {
   try {
@@ -1823,21 +2320,44 @@ function closeSeries() {
 for (const b of document.querySelectorAll('.tabs button')) {
   b.addEventListener('click', () => {
     document.body.classList.remove('show-items');
+    // A tab shows its own content: the search is left
+    if (query || $('#search').value) { $('#search').value = ''; query = ''; expanded.clear(); return selectTab(b.dataset.tab); }
     if (b.dataset.tab !== ui.tab || series) selectTab(b.dataset.tab);
   });
 }
 
 let searchTimer;
+function runSearch(v) {
+  query = v.trim();
+  expanded.clear();
+  closeSeries();
+  if (!query && ui.tab === 'home') { layout(); renderHome(); return; }
+  if (!query && ui.tab !== 'agenda' && !data[ui.tab]) return;
+  folderList.refresh();
+  refreshItems(true);
+  if (query) document.body.classList.add('show-items');
+  else if (ui.tab === 'agenda' || data[ui.tab]) renderFolders();
+}
 $('#search').addEventListener('input', e => {
+  showRecent();
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    if (!data[ui.tab] && ui.tab !== 'agenda') return;
-    query = e.target.value.trim();
-    closeSeries();
-    folderList.refresh();
-    refreshItems(true);
-    if (query) document.body.classList.add('show-items');
-  }, 200);
+  searchTimer = setTimeout(() => runSearch(e.target.value), 250);
+});
+$('#search').addEventListener('focus', showRecent);
+$('#search').addEventListener('blur', () => { if (query && list.length) pushRecent(query); setTimeout(showRecent, 150); });
+$('#search').addEventListener('keydown', e => { if (e.key === 'Enter' && query) pushRecent(query); });
+$('#recentQ').addEventListener('pointerdown', e => e.preventDefault());   // keep the focus in the box
+$('#recentQ').addEventListener('focusout', () => setTimeout(showRecent, 150));
+$('#recentQ').addEventListener('click', e => {
+  const b = e.target.closest('[data-q]');
+  if (!b) return;
+  const q = recentQ[+b.dataset.q];
+  $('#search').value = q;
+  $('#recentQ').hidden = true;
+  clearTimeout(searchTimer);
+  runSearch(q);
+  pushRecent(q);
+  $('#search').blur();
 });
 
 $('#back').addEventListener('click', () => {
@@ -1847,6 +2367,13 @@ $('#back').addEventListener('click', () => {
 
 async function reload() {
   const t = ui.tab;
+  if (t === 'home') {
+    await Promise.all([agenda.load(true), recorder ? loadPiRecs() : null]);
+    eventChanCache.clear();
+    homeWantEpg();
+    renderHome();
+    return;
+  }
   if (t === 'agenda') {
     await agenda.load(true);
     eventChanCache.clear();
@@ -1890,6 +2417,10 @@ $('#settingsBtn').addEventListener('click', () => {
   $('#epgInput').checked = !!settings.epg;
   $('#autoFsInput').checked = settings.autoFs !== false;
   $('#cuShiftInput').value = String(settings.cuShift || 0);
+  $('#scaleInput').value = getScale();
+  $('#vodInput').checked = !!settings.vod;
+  $('#autoRecInput').checked = !!settings.autoRec;
+  $('#autoRecRow').hidden = !recorder;
   $('#settings').returnValue = '';
   $('#settings').showModal();
 });
@@ -1905,7 +2436,12 @@ $('#settings').addEventListener('close', async () => {
     settings.epg = $('#epgInput').checked;
     settings.autoFs = $('#autoFsInput').checked;
     settings.cuShift = +$('#cuShiftInput').value;
+    settings.vod = $('#vodInput').checked;
+    settings.autoRec = $('#autoRecInput').checked;
     store.set('settings', settings);
+    setScale($('#scaleInput').value);
+    applyVod();
+    autoRecTeams();
     const proxy = $('#proxyInput').value.trim();
     if (proxy !== api.proxy) {
       const creds = { ...store.get('creds'), proxy };
@@ -1929,6 +2465,117 @@ $('#settings').addEventListener('close', async () => {
     logout();
   }
 });
+
+// ---- interface size: '' automatic (smaller on TVs), 's', 'm', 'l' (read by the script in index.html)
+function getScale() { try { return localStorage.getItem('iptv-scale') || ''; } catch { return ''; } }
+function setScale(z) {
+  try { if (z) localStorage.setItem('iptv-scale', z); else localStorage.removeItem('iptv-scale'); } catch {}
+  let tvLike = false;
+  try { tvLike = /Android ?TV|GoogleTV|BRAVIA|\bAFT|SMART-?TV|SmartTV|Web0S|webOS|NetCast|Tizen|HbbTV|CrKey|\bTV\b/i.test(navigator.userAgent) || localStorage.getItem('iptv-tv') === '1'; } catch {}
+  const c = document.documentElement.classList;
+  c.toggle('tv', z === 's' || (!z && tvLike));
+  c.toggle('big', z === 'l');
+  if (!$('#grid').hidden) grid.refresh();
+}
+
+// ---- Películas / Series: hidden unless enabled (the provider stopped sending them)
+function applyVod(redirect = true) {
+  for (const b of document.querySelectorAll('.tabs [data-tab="vod"], .tabs [data-tab="series"]')) b.hidden = !settings.vod;
+  if (redirect && api && !settings.vod && (ui.tab === 'vod' || ui.tab === 'series')) selectTab('home');
+}
+applyVod(false);
+
+// ---- checklists (visible folders, agenda sports, favourite teams)
+let checkSave = null;
+function checklist({ title, hint, items, quick = [], onSave }) {
+  $('#checkTitle').textContent = title;
+  $('#checkHint').textContent = hint || '';
+  $('#checkSearch').value = '';
+  $('#checkSearch').hidden = items.length < 12;
+  $('#checkList').innerHTML = items.map(x => `<label class="check" data-k="${esc(norm(x.name))}"><input type="checkbox" value="${esc(x.id)}"${x.on ? ' checked' : ''}> <span>${esc(x.name)}${x.sub ? ` <span class="dim">${esc(x.sub)}</span>` : ''}</span></label>`).join('')
+    || '<p class="muted">No hay nada que elegir todavía.</p>';
+  $('#checkQuick').innerHTML = quick.map((q, i) => `<button type="button" data-qi="${i}">${esc(q.label)}</button>`).join('');
+  $('#checkQuick').hidden = !quick.length;
+  $('#checkQuick').onclick = e => {
+    const b = e.target.closest('[data-qi]');
+    if (!b) return;
+    const boxes = [...$('#checkList').querySelectorAll('input')];
+    quick[+b.dataset.qi].fn(boxes, items);
+  };
+  checkSave = onSave;
+  $('#checkDialog').returnValue = '';
+  $('#checkDialog').showModal();
+}
+$('#checkSearch').addEventListener('input', e => {
+  const q = norm(e.target.value.trim());
+  for (const l of $('#checkList').querySelectorAll('label')) l.hidden = !!q && !l.dataset.k.includes(q);
+});
+$('#checkSearch').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+$('#checkDialog').addEventListener('close', () => {
+  const fn = checkSave;
+  checkSave = null;
+  if ($('#checkDialog').returnValue !== 'save' || !fn) return;
+  fn(new Set([...$('#checkList').querySelectorAll('input:checked')].map(i => i.value)));
+});
+
+// Folders of other countries (by name: "⛅ | Francia - Full", "Lat - Noticias", "24/7 | Kids - Ingles"…)
+const FOREIGN_FOLDER = /\b(arabe|africa|australia|alemania|argentina|bolivia|brasil|belgica|bulgaria|canada|costa rica|colombia|chequia|chile|dinamarca|egipto|ecuador|el salvador|francia|finlandia|guatemala|grecia|honduras|hungria|italia|usa|marruecos|mexico|noruega|netherlands|holanda|nicaragua|paraguay|panama|portugal|polonia|peru|puerto rico|reino unido|rusia|rumania|dominicana|suiza|suecia|serbia|turquia|uruguay|venezuela|lat|latino|latinoamerica|aleman|ingles|italiano|portugues|uk|usa|india|pakistan|kurdish|albania|ex-?yu)\b/;
+
+$('#foldersBtn').addEventListener('click', async () => {
+  const d = await ensureData('live').catch(() => null);
+  if (!d) return;
+  const folders = d.folders.filter(f => unlocked || !f.adult);
+  checklist({
+    title: 'Carpetas visibles',
+    hint: 'Las desmarcadas no salen en Directo, «Todo» ni en la búsqueda. Sus canales siguen sirviendo para la agenda y como respaldo.',
+    items: folders.map(f => ({ id: f.id, name: f.name, on: !hiddenF.has(f.id), sub: `${folderItems(f).length}` })),
+    quick: [
+      { label: 'Ocultar las de otros países', fn: (boxes, items) => boxes.forEach((b, i) => { if (FOREIGN_FOLDER.test(norm(items[i].name))) b.checked = false; }) },
+      { label: 'Mostrar todas', fn: boxes => boxes.forEach(b => { b.checked = true; }) },
+    ],
+    onSave: on => {
+      hiddenF = new Set(folders.map(f => f.id).filter(id => !on.has(id)));
+      hiddenVer++;
+      store.set('hideF:' + account, [...hiddenF]);
+      toast(hiddenF.size ? `${hiddenF.size} carpeta${hiddenF.size > 1 ? 's' : ''} oculta${hiddenF.size > 1 ? 's' : ''}` : 'Todas las carpetas visibles', 2500);
+      if (ui.tab === 'live') { if (hiddenF.has(ui.folder.live)) ui.folder.live = ALL; renderFolders(); refreshItems(false); }
+    },
+  });
+});
+
+$('#sportsBtn').addEventListener('click', async () => {
+  await agenda.load();
+  const count = new Map();
+  for (const e of agenda.events) count.set(e.sport, (count.get(e.sport) || 0) + 1);
+  const sports = [...count].sort((a, b) => b[1] - a[1]);
+  checklist({
+    title: 'Deportes de la agenda',
+    hint: 'Los desmarcados no salen en la agenda, en Inicio ni en la búsqueda.',
+    items: sports.map(([sp, n]) => ({ id: sp, name: sp, on: !settings.hideSports.includes(sp), sub: `${n}` })),
+    quick: [{ label: 'Solo fútbol', fn: (boxes, items) => boxes.forEach((b, i) => { b.checked = /^f[uú]tbol$/i.test(items[i].id); }) },
+      { label: 'Todos', fn: boxes => boxes.forEach(b => { b.checked = true; }) }],
+    onSave: on => {
+      settings.hideSports = sports.map(x => x[0]).filter(sp => !on.has(sp));
+      store.set('settings', settings);
+      eventChanCache.clear();
+      if (ui.tab === 'agenda') { renderFolders(); refreshItems(false); }
+    },
+  });
+});
+
+async function editTeams() {
+  await agenda.load();
+  const names = new Map(teams.map(t => [norm(t), t]));
+  for (const e of agenda.events) for (const n of [e.home, e.away]) if (n && !names.has(norm(n))) names.set(norm(n), n);
+  const all = [...names.values()].sort((a, b) => isTeam(b) - isTeam(a) || a.localeCompare(b, 'es'));
+  checklist({
+    title: 'Mis equipos',
+    hint: 'Sus partidos salen primero en Inicio y en «★ Mis equipos» de la agenda. También desde ⋯ en cualquier partido. La lista son los equipos con partidos en la agenda de estos días.',
+    items: all.map(n => ({ id: n, name: n, on: isTeam(n) })),
+    onSave: on => setTeams(all.filter(n => on.has(n))),
+  });
+}
+$('#teamsBtn').addEventListener('click', editTeams);
 
 // Connection test: every list request with its time, size and number of items.
 $('#diagBtn').addEventListener('click', async () => {

@@ -1,16 +1,17 @@
 // Horizontal TV guide of a folder's channels: one row per channel, time across (12 h from just
 // before now), a red line at the current time. A programme on now plays its channel; a later one
-// opens the channel's guide (to record it).
+// opens its options (record, remind…). The corner button scrolls back to now.
 
-import { esc, initials } from './ui.js?v=20261018f';
-import { hhmm } from './epg.js?v=20261018f';
+import { esc, initials } from './ui.js?v=20261018g';
+import { hhmm } from './epg.js?v=20261018g';
 
 const PX = 4;               // px per minute (240 px per hour)
 const SPAN = 12 * 60;       // minutes shown
 const MAX = 300;            // channels drawn at most
 
 export class Grid {
-  // ctx: { guide(item) → [{ title, start, end }] | null, wantEpg(items), play(items, i), later(item, prog) }
+  // ctx: { guide(item) → [{ title, start, end }] | null, wantEpg(items), play(items, i), later(item, prog),
+  //        mark(item, prog) → prefix ('🔔 ' reminder, '⏺ ' recording) }
   constructor(el, ctx) {
     this.el = el;
     this.ctx = ctx;
@@ -18,6 +19,7 @@ export class Grid {
     el.addEventListener('click', e => {
       const c = e.target.closest('.gcell');
       if (!c) return;
+      if (c.dataset.now != null) return this.toNow();
       const i = +c.dataset.i, it = this.items[i];
       const p = c.dataset.p != null ? this.progs[i][+c.dataset.p] : null;
       if (p && p.start > Date.now() / 1000) this.ctx.later(it, p);
@@ -39,6 +41,11 @@ export class Grid {
   // Redraw keeping the scroll position (new guide data, a new minute).
   refresh() {
     if (!this.el.hidden && this.items.length) this.draw(false);
+  }
+
+  toNow() {
+    const x = Math.round((Date.now() / 1000 - this.t0) / 60 * PX);
+    this.el.scrollTo({ left: Math.max(0, x - 90), behavior: 'smooth' });
   }
 
   tick() {
@@ -66,7 +73,7 @@ export class Grid {
       const cells = progs.map((p, j) => {
         const on = p.start <= now && p.end > now, past = p.end <= now;
         return `<button class="gcell${on ? ' on' : ''}${past ? ' past' : ''}" data-i="${i}" data-p="${j}" style="left:${x(p.start)}px;width:${Math.max(x(p.end) - x(p.start) - 2, 6)}px" title="${esc(p.title)}">
-          <span class="g-pt">${esc(p.title || 'Sin título')}</span><span class="g-pm">${hhmm(p.start)}–${hhmm(p.end)}</span></button>`;
+          <span class="g-pt">${esc(this.ctx.mark?.(it, p) || '')}${esc(p.title || 'Sin título')}</span><span class="g-pm">${hhmm(p.start)}–${hhmm(p.end)}</span></button>`;
       }).join('');
       return `<div class="g-line">
         <button class="gcell gch" data-i="${i}" title="${esc(it.name)}"><span class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span><span class="g-nm"><span class="g-name">${esc(it.name)}</span>${n > 1 ? `<small class="g-vers">${n} versiones</small>` : ''}</span></button>
@@ -75,7 +82,7 @@ export class Grid {
     }).join('');
     const more = this.items.length < this.itemsTotal ? `<div class="g-more">Mostrando ${this.items.length} canales</div>` : '';
     this.el.innerHTML = `<div class="g-wrap" style="width:${SPAN * PX + cw}px">
-      <div class="g-head"><div class="g-corner">Hoy</div><div class="g-ruler" style="width:${SPAN * PX}px">${head}</div></div>
+      <div class="g-head"><button class="gcell g-corner" data-now title="Volver a la hora actual">⟲ Ahora</button><div class="g-ruler" style="width:${SPAN * PX}px">${head}</div></div>
       ${rows}${more}
       <div class="g-now" style="left:${cw + x(now)}px"></div>
     </div>`;

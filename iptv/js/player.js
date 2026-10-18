@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261018f';
+import { startEngine, resetVideo } from './engines.js?v=20261018g';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -38,6 +38,13 @@ export class Player {
     this.info = root.querySelector('#pInfo');
     this.msgEl = root.querySelector('#pMsg');
     this.retryBtn = root.querySelector('#pRetry');
+    // Failed: what can be done (retry, another version, another channel, close)
+    this.failEl = root.querySelector('#pFail');
+    this.otherBtn = root.querySelector('#pOther');
+    this.chooseBtn = root.querySelector('#pChoose');
+    this.otherBtn.onclick = e => { e.stopPropagation(); this.otherSource(); };
+    this.chooseBtn.onclick = e => { e.stopPropagation(); this.onChoose?.(); };
+    root.querySelector('#pQuit').onclick = e => { e.stopPropagation(); this.close(); };
     this.prevBtn = root.querySelector('#pPrev');
     this.nextBtn = root.querySelector('#pNext');
     this.favBtn = root.querySelector('#pFav');
@@ -55,7 +62,7 @@ export class Player {
     root.querySelector('#pClose').onclick = () => this.close();
     this.prevBtn.onclick = () => this.step(-1);
     this.nextBtn.onclick = () => this.step(1);
-    this.retryBtn.onclick = () => this.load();
+    this.retryBtn.onclick = e => { e.stopPropagation(); this.load(); };
     this.playBtn = root.querySelector('#pPlay');
     this.playBtn.onclick = e => { e.stopPropagation(); this.unblock(); };
     root.querySelector('#pFs').onclick = () => this.fullscreen();
@@ -188,7 +195,7 @@ export class Player {
     this.src = 0;
     this.switches = 0;
     this.resetCounters();
-    this.resumeAt = 0;
+    this.resumeAt = r.resumeAt || 0;   // a recording / film: where it was left
     this.closeMenu();
     this.updateFav();
     this.wake();
@@ -226,6 +233,8 @@ export class Player {
     this.altBtn.textContent = `⇄ Versión ${this.src + 1}/${n}`;
     // Browser controls only for films and episodes: live, catch-up and recordings have our own bar.
     this.video.controls = !(this.live || this.cu || this.sk);
+    // Our own controls: the browser must not scroll or zoom on swipes (touch gestures, see touch.js)
+    this.video.style.touchAction = this.video.controls ? '' : 'none';
     this.title.textContent = this.baseTitle + (this.src > 0 ? ` · respaldo: ${s.name}` : '');
     this.root.classList.toggle('catchup', !!(this.cu || this.sk));
     this.drawCu();
@@ -309,8 +318,7 @@ export class Player {
     this.cu.base = this.cu.end;
     this.drawCu();
     this.msg('Fin del programa.');
-    this.retryBtn.textContent = 'Ver de nuevo';
-    this.retryBtn.hidden = false;
+    this.showFail('Ver de nuevo');
   }
 
   startCuTimer() {
@@ -531,9 +539,8 @@ export class Player {
     this.lastTime = 0;
     this.cuT0 = null;
     this.video.muted = false;   // muted only as a fallback when the browser refuses to play
-    this.retryBtn.textContent = 'Reintentar';
     this.status(status);
-    this.retryBtn.hidden = true;
+    this.failEl.hidden = true;
     this.armTimer(this.sources.length > 1 ? BACKUP_TIMEOUT : LOAD_TIMEOUT);
     const fail = () => { if (tok === this.token) this.failed(); };
     this.failNow = fail;
@@ -625,7 +632,16 @@ export class Player {
     this.teardown();
     this.token++;
     this.msg(text);
-    this.retryBtn.hidden = false;
+    this.showFail('↻ Reintentar');
+  }
+
+  showFail(label) {
+    this.retryBtn.textContent = label;
+    this.otherBtn.hidden = this.sources.length < 2 || !!this.sk;
+    this.chooseBtn.hidden = !this.live || !this.onChoose || !!this.cu;
+    this.failEl.hidden = false;
+    this.root.classList.remove('idle');
+    if (document.body.classList.contains('kbd') || !matchMedia('(pointer: coarse)').matches) this.retryBtn.focus();
   }
 
   onPlaying() {
@@ -780,7 +796,7 @@ export class Player {
     this.closeMenu();
     this.root.hidden = true;
     this.msg('');
-    this.retryBtn.hidden = true;
+    this.failEl.hidden = true;
     clearInterval(this.cuTimer);
     this.cu = null;
     this.sk = null;
