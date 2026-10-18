@@ -2,8 +2,8 @@
 // before now), a red line at the current time. A programme on now plays its channel; a later one
 // opens the channel's guide (to record it).
 
-import { esc, initials } from './ui.js?v=20261018e';
-import { hhmm } from './epg.js?v=20261018e';
+import { esc, initials } from './ui.js?v=20261018f';
+import { hhmm } from './epg.js?v=20261018f';
 
 const PX = 4;               // px per minute (240 px per hour)
 const SPAN = 12 * 60;       // minutes shown

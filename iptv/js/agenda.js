@@ -2,7 +2,7 @@
 // folders (now & next, days, sports) and a chronological list. Each event's channels are matched
 // with the live list so a press plays the broadcast.
 
-import { esc } from './ui.js?v=20261018e';
+import { esc } from './ui.js?v=20261018f';
 
 export const NOW = 'ag:now', DAY = 'ag:day:', SPORT = 'ag:sport:', MINE = 'ag:mine';
 
@@ -29,7 +29,7 @@ function dayName(t) {
 const NUMBERS = { uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
 export function cleanChannel(name) {
   return name.replace(/\([^)]*\)/g, ' ').replace(/#/g, ' ')
-    .replace(/\blaliga\s+tv\s+m(\d+)\b/i, 'M+ LaLiga $1')
+    .replace(/\blaliga\s+tv\s+m(\d+)\b/i, 'LaLiga TV Bar $1')   // "LaLiga TV M2": the bars' feed 2 (LaLiga TV BAR 2)
     .replace(/\bdazn\s+baloncesto\b/i, 'DAZN ACB')
     .replace(/\bprimera\s+federaci[oó]n\b/i, 'M+ REF Federacion')
     .replace(/\s+-\s+.*$/, '')                                   // "Tennis Channel - Orange TV"

@@ -1,16 +1,16 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018e';
-import * as store from './store.js?v=20261018e';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018e';
-import { Player } from './player.js?v=20261018e';
-import { Epg, hhmm } from './epg.js?v=20261018e';
-import { Grid } from './grid.js?v=20261018e';
-import { Mosaic } from './mosaic.js?v=20261018e';
-import { initRemote } from './remote.js?v=20261018e';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018e';
-import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261018e';
-import { Zapper } from './zap.js?v=20261018e';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018f';
+import * as store from './store.js?v=20261018f';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018f';
+import { Player } from './player.js?v=20261018f';
+import { Epg, hhmm } from './epg.js?v=20261018f';
+import { Grid } from './grid.js?v=20261018f';
+import { Mosaic } from './mosaic.js?v=20261018f';
+import { initRemote } from './remote.js?v=20261018f';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018f';
+import { Agenda, eventRow, channelVariants, NOW as AG_NOW, DAY as AG_DAY } from './agenda.js?v=20261018f';
+import { Zapper } from './zap.js?v=20261018f';
 
-const VERSION = '2026-10-18e';
+const VERSION = '2026-10-18f';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -588,11 +588,17 @@ const eventChanCache = new Map();
 // Channels of an event, with the live channel that plays each (null when not in the list); playable first.
 function eventChannels(e) {
   const items = data.live?.items;
-  const tag = items ? items.length : 0;
+  const tag = (items ? items.length : 0) + (epg?.pub ? 'g' : '') + (epg?.prov ? 'x' : '') + (unlocked ? 'u' : '');
   const hit = eventChanCache.get(e.id);
   if (hit?.tag === tag) return hit.chans;
   const seen = new Set();
-  const chans = e.channels.map(name => ({ raw: name, name: name.replace(/\s*\([^)]*\)/g, ''), item: items ? channelFor(name) : null }))
+  // The guide says where the match really is: those channels first.
+  const byGuide = items && e.home ? (epg?.matchAt(e.t, e.home, e.away) || []).map(l => guideChannel(l)).filter(Boolean)
+    .map(item => ({ raw: null, name: shortName(item.name), item, guide: true })) : [];
+  // Once the guide has found it, a channel of the agenda's whose guide shows something else is a wrong guess.
+  const named = e.channels.map(name => ({ raw: name, name: name.replace(/\s*\([^)]*\)/g, ''), item: items ? channelFor(name) : null }))
+    .filter(c => !byGuide.length || !c.item || !epg.byName(c.item.name));
+  const chans = [...byGuide, ...named]
     .filter(c => !c.item || (!seen.has(c.item.id) && seen.add(c.item.id)));   // "M+ LALIGA" and "M+ LALIGA HDR": one channel here
   chans.sort((a, b) => !!b.item - !!a.item);
   eventChanCache.set(e.id, { tag, chans });
@@ -612,6 +618,29 @@ function channelFor(name) {
   }
   return null;
 }
+
+// Best live channel showing a guide (programme list): Spanish M+/DAZN versions first, then any non-foreign one.
+let guideIdx = null;
+function guideChannel(list) {
+  const d = data.live, s = sports();
+  const key = `${d.items.length}${!!epg.prov}${unlocked}`;
+  if (guideIdx?.items !== d.items || guideIdx.key !== key) {
+    const by = new Map();
+    const pref = it => (s.alts.has(it.id) ? 0 : 2) + (/\bsd\b/i.test(it.name) ? 1 : 0);
+    for (const it of visItems(d)) {
+      if (isForeign(it.name)) continue;
+      const l = epg.byName(it.name);
+      if (!l) continue;
+      const cur = by.get(l);
+      if (!cur || pref(it) < pref(cur)) by.set(l, it);
+    }
+    guideIdx = { items: d.items, key, by };
+  }
+  return guideIdx.by.get(list) || null;
+}
+
+// "┃ES┃ LALIGA TV HYPERMOTION FHD" → "LALIGA TV HYPERMOTION"
+const shortName = n => n.replace(/^\s*[┃|]?\s*[A-Z]{2}\s*[┃|:]\s*/, '').replace(/\s+(SD|HD|FHD|UHD|4K|HEVC|1080p?|720p?)\b.*$/i, '').trim() || n;
 
 // Agenda channel names assigned by hand to a live channel (per account).
 let aliases = {};
@@ -670,6 +699,8 @@ async function selectAgenda() {
   }
   await Promise.all([agenda.load(), ensureData('live').catch(() => {})]);
   if (ui.tab !== 'agenda') return;
+  // The guide finds the channel of matches the agenda names vaguely: redraw once it is in.
+  if (epg && !epg.pub) epg.guides().then(() => { eventChanCache.clear(); if (ui.tab === 'agenda') { renderFolders(false); refreshItems(false); } });
   renderFolders(false);
   refreshItems(true);
 }

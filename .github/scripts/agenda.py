@@ -46,7 +46,14 @@ def parse(page):
         home = attr(row, r'<td class="local[^"]*">.*?<span title="([^"]*)"')
         away = attr(row, r'<td class="visitante[^"]*">.*?<span title="([^"]*)"')
         single = text(attr(row, r'<span class="eventoUnico">(.*?)</span>'))
-        chans = [html.unescape(c).strip() for c in re.findall(r'<li class="canal[^"]*"[^>]*title="([^"]*)"', row)]
+        # Every channel of the list, linked ones too ("LALIGA TV Hypermotion (M56 O120): VER PARTIDO")
+        lst = attr(row, r'<ul class="listaCanales">(.*?)</ul>')
+        chans = []
+        for c in re.findall(r'<li\b[^>]*\btitle="([^"]*)"', lst):
+            c = re.sub(r'\s*:\s*ver\b.*$|\(\s*ver\b[^)]*\)', '', html.unescape(c), flags=re.I).strip()
+            # A bare "DAZN (Ver en directo)" is an advert for the app, not a channel
+            if c and c.upper() != 'DAZN' and c not in chans:
+                chans.append(c)
         if not (home or single) or not chans:
             continue
         ev = {'t': int(start.timestamp()), 'dur': duration(attr(row, r'itemprop="duration" content="([^"]*)"')),

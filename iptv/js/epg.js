@@ -4,7 +4,7 @@
 //  3. get_short_epg per channel, fetched lazily for what is on screen
 //     (few concurrent requests, newest request wins, cached until the current programme ends).
 
-import { channelKey, isForeign } from './backups.js?v=20261018e';
+import { channelKey, isForeign } from './backups.js?v=20261018f';
 
 const CONCURRENCY = 3;
 // Daily by .github/workflows/epg.yml in lusob.github.io (tools/epg.py), on a branch of its own.
@@ -66,6 +66,7 @@ export class Epg {
         }
       } catch (e) { console.warn('xmltv', e); }
       this.prov = prov;
+      this.matchIdx = null;
     })();
   }
 
@@ -74,6 +75,27 @@ export class Epg {
     if (!name) return null;
     const k = channelKey(name);
     return (!isForeign(name) && this.pub?.get(k)) || this.prov?.get(k) || null;
+  }
+
+  // Guides that broadcast the match home–away starting at about t (both teams in the title):
+  // [programme list], the agenda's own channel names being often vague ("LaLiga TV M2").
+  matchAt(t, home, away) {
+    if (!this.pub) return [];
+    if (!this.matchIdx) {
+      // Programmes that look like a match ("Granada CF - Cádiz CF"), not trailers or summaries.
+      this.matchIdx = [];
+      for (const map of [this.pub, this.prov || new Map()]) {
+        for (const list of new Set(map.values())) {
+          for (const p of list) {
+            if (/ - /.test(p.title) && !/pr[oó]ximo|resumen|previa|highlights|mejores/i.test(p.title)) this.matchIdx.push({ start: p.start, k: ' ' + norm(p.title).replace(/[^a-z0-9]+/g, ' ') + ' ', list });
+          }
+        }
+      }
+    }
+    const ha = teamWords(home), aw = teamWords(away);
+    if (!ha.length || !aw.length) return [];
+    const has = (k, ws) => ws.some(w => k.includes(` ${w} `));
+    return [...new Set(this.matchIdx.filter(m => Math.abs(m.start - t) <= 1200 && has(m.k, ha) && has(m.k, aw)).map(m => m.list))];
   }
 
   // Programmes on now or later whose title contains q (already normalised), one channel per
@@ -159,5 +181,10 @@ function xmlTs(t, tz) {
   const off = tz ? (tz[0] === '-' ? -1 : 1) * (+tz.slice(1, 3) * 3600 + +tz.slice(3, 5) * 60) : 0;
   return utc - off;
 }
+
+const norm = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+// Distinctive words of a team name: "Real Oviedo" → oviedo, "AD Ceuta FC" → ceuta.
+const GENERIC = new Set(['real', 'club', 'fc', 'cf', 'cd', 'ud', 'sd', 'ad', 'rcd', 'sad', 'cp', 'ca', 'de', 'del', 'la', 'el', 'los', 'las', 'b', 'c', 'balompie', 'futbol', 'f', 'femenino', 'academy', 'baloncesto', 'basket']);
+const teamWords = name => norm(name || '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(w => w.length > 2 && !GENERIC.has(w));
 
 export const hhmm = sec => new Date(sec * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
