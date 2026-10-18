@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261018g';
+import { startEngine, resetVideo } from './engines.js?v=20261018h';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -37,6 +37,7 @@ export class Player {
     setInterval(() => this.relax(), 60e3);
     this.info = root.querySelector('#pInfo');
     this.msgEl = root.querySelector('#pMsg');
+    this.artEl = root.querySelector('#pArt');   // the programme's picture while the channel loads
     this.retryBtn = root.querySelector('#pRetry');
     // Failed: what can be done (retry, another version, another channel, close)
     this.failEl = root.querySelector('#pFail');
@@ -196,6 +197,7 @@ export class Player {
     this.switches = 0;
     this.resetCounters();
     this.resumeAt = r.resumeAt || 0;   // a recording / film: where it was left
+    this.setArt('');
     this.closeMenu();
     this.updateFav();
     this.wake();
@@ -356,6 +358,15 @@ export class Player {
     this.cuBar.querySelector('#cuTime').textContent = hm(pos);
     this.cuBar.querySelector('#cuEnd').textContent = hm(end);
     this.cuBar.querySelector('#cuLive').hidden = !this.liveSources || now > end;
+  }
+
+  // Picture shown behind the loading / error messages until the picture plays.
+  setArt(url) {
+    if (url !== this.art) {
+      this.art = url;
+      this.artEl.style.backgroundImage = url ? `url("${url}")` : '';
+    }
+    this.artEl.hidden = !url || this.played;
   }
 
   setInfo(html) {
@@ -649,6 +660,7 @@ export class Player {
     if (this.cu && this.cuT0 == null) { this.cuT0 = this.video.currentTime; this.applySkip(); }
     this.lastTime = this.video.currentTime;
     this.played = true;
+    this.artEl.hidden = true;
     this.clearTimer();
     this.stopTicker();
     this.msg('');

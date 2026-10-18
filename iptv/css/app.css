@@ -467,11 +467,56 @@ body.no-folders #itemsPane { display: flex; }
 .h-sec h3 { margin: 0 16px 8px; font-size: 18px; font-weight: 600; color: var(--dim); }
 .h-row { display: flex; gap: 12px; overflow-x: auto; padding: 4px 16px 10px; scroll-padding: 0 16px; scrollbar-width: thin; }
 .hcard {
-  all: unset; box-sizing: border-box; flex: none; cursor: pointer;
+  all: unset; box-sizing: border-box; flex: none; cursor: pointer; position: relative;
   width: 280px; min-height: 112px; padding: 12px;
   display: flex; gap: 12px; align-items: flex-start;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
 }
+/* Cards with a picture on top (programme still, or crests / an icon on a gradient) */
+.hcard.pic { flex-direction: column; gap: 0; padding: 0; overflow: hidden; }
+.hc-art { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; flex: none; overflow: hidden;
+  background: radial-gradient(circle at 30% 20%, #2b3550, #151820 70%); }
+.hc-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.hc-art .logo { position: absolute; left: 10px; bottom: 10px; width: 48px; height: 48px; box-shadow: 0 2px 10px rgb(0 0 0 / .5); }
+.hc-art.noimg .logo { left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: 72px; height: 72px; }
+.hcard.pic .hc-body { padding: 10px 12px 12px; align-self: stretch; }
+.hc-vs { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 18px; color: var(--dim); font-size: 22px; }
+.hc-vs .crest { width: 56px; height: 56px; margin: 0; }
+.hc-sport { position: absolute; inset: 0; display: grid; place-items: center; font-size: 48px; opacity: .8; }
+.hcard.ev.live .hc-art::after, .hcard.rec.on-air .hc-art::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--danger); }
+.hcard.ev.live, .hcard.rec.on-air { box-shadow: none; }
+
+/* Hero: what is worth watching now, big */
+.h-hero { padding: 6px 16px 4px; }
+.hcard.hero { width: 100%; height: min(42vh, 380px); min-height: 220px; padding: 0; display: block; overflow: hidden; border: 0; background: #111; }
+.hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: heroIn .6s ease-out; }
+@keyframes heroIn { from { opacity: 0; transform: scale(1.03); } to { opacity: 1; transform: none; } }
+.hero-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgb(13 15 19 / .92) 0%, rgb(13 15 19 / .6) 45%, transparent 75%), linear-gradient(0deg, rgb(13 15 19 / .7), transparent 50%); }
+.hero-txt { position: absolute; left: 28px; bottom: 26px; width: min(560px, 70%); display: flex; flex-direction: column; gap: 8px; }
+.hero-tag { font-size: 14px; color: #c9cdd6; }
+.hero-title { font-size: 30px; font-weight: 700; line-height: 1.15; text-shadow: 0 2px 12px rgb(0 0 0 / .6); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hero-title .ag-team { display: inline-flex; align-items: center; }
+.hero-title .crest { width: 32px; height: 32px; }
+.hero-title .ag-vs { display: inline !important; margin: 0 10px; color: var(--dim); }
+.hero-sub { font-size: 15px; color: #dfe2ea; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-txt .bar { max-width: 360px; }
+.hero-go { align-self: flex-start; margin-top: 6px; padding: 10px 20px; border-radius: 10px; background: #fff; color: #111; font-weight: 700; }
+.hcard.hero.kfocus { outline: 4px solid #fff; outline-offset: 0; }
+.hcard.hero.kfocus .hero-go { background: var(--accent); color: #fff; }
+.hero-dots { position: absolute; right: 20px; bottom: 18px; display: flex; gap: 6px; }
+.hero-dots i { width: 8px; height: 8px; border-radius: 50%; background: rgb(255 255 255 / .35); }
+.hero-dots i.on { background: #fff; }
+@media (max-width: 760px) {
+  .h-hero { padding: 4px 12px; }
+  .hcard.hero { height: 56vw; min-height: 200px; }
+  .hero-txt { left: 14px; bottom: 14px; width: calc(100% - 28px); gap: 5px; }
+  .hero-title { font-size: 20px; }
+  .hero-title .crest { width: 22px; height: 22px; }
+  .hero-sub { font-size: 13px; }
+  .hero-go { padding: 7px 14px; font-size: 14px; }
+  .hero-dots { right: 12px; bottom: 12px; }
+}
+html.tv .hcard.hero { height: min(calc(42vh / .8), 380px); }
 .hcard:active { filter: brightness(1.25); }
 .hcard.kfocus { outline: 3px solid #fff; outline-offset: 0; border-color: #fff; }
 .hcard .logo { width: 52px; height: 52px; }
@@ -484,8 +529,7 @@ body.no-folders #itemsPane { display: flex; }
 .hc-match .ag-vs { display: none; }
 .hc-match .ag-team { display: flex; align-items: center; gap: 6px; }
 .hcard .bar { width: 100%; }
-.hcard.ev.live { box-shadow: inset 4px 0 0 var(--danger); }
-.hcard.rec.on-air { box-shadow: inset 4px 0 0 #ff6b6b; }
+
 .hcard.more { width: 160px; align-items: center; justify-content: center; text-align: center; background: transparent; border-style: dashed; color: var(--accent); }
 .hcard.hint { background: transparent; border-style: dashed; }
 .hcard.hint .hc-sub { white-space: normal; }
@@ -566,3 +610,13 @@ html.big .check-list { max-height: calc(50vh / 1.15); }
 #remindText { flex: 1; min-width: 0; }
 #remindText b { color: var(--star); }
 #remind .primary { width: auto; padding: 0 18px; }
+
+/* Programme pictures: loading backdrop in the player, info footer, guide rows */
+#pArt { position: absolute; inset: 0; background: center / cover no-repeat; filter: brightness(.35) blur(2px); transform: scale(1.02); pointer-events: none; }
+#pilot .pl-art { flex: none; width: 128px; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: #000; }
+#pilot .pl-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#pilot .pl-art + .logo { width: 52px; height: 52px; }
+@media (max-width: 760px) { #pilot .pl-art { display: none; } }
+.g-img { flex: none; width: 96px; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: var(--panel-2); }
+.g-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+@media (max-width: 760px) { .g-img { width: 72px; } .g-time { width: 92px; font-size: 13px; } }

@@ -1,17 +1,17 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018g';
-import * as store from './store.js?v=20261018g';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018g';
-import { Player } from './player.js?v=20261018g';
-import { Epg, hhmm } from './epg.js?v=20261018g';
-import { Grid } from './grid.js?v=20261018g';
-import { Mosaic } from './mosaic.js?v=20261018g';
-import { initRemote } from './remote.js?v=20261018g';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018g';
-import { Agenda, eventRow, channelVariants, matchTitle, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261018g';
-import { Zapper } from './zap.js?v=20261018g';
-import { initTouch } from './touch.js?v=20261018g';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018h';
+import * as store from './store.js?v=20261018h';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018h';
+import { Player } from './player.js?v=20261018h';
+import { Epg, hhmm, artUrl } from './epg.js?v=20261018h';
+import { Grid } from './grid.js?v=20261018h';
+import { Mosaic } from './mosaic.js?v=20261018h';
+import { initRemote } from './remote.js?v=20261018h';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018h';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261018h';
+import { Zapper } from './zap.js?v=20261018h';
+import { initTouch } from './touch.js?v=20261018h';
 
-const VERSION = '2026-10-18g';
+const VERSION = '2026-10-18h';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -1001,9 +1001,30 @@ function scheduleHome() {
 
 const logoHtml = it => `<span class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>`;
 
+// Picture of a programme (public guide), resized: see artUrl in epg.js.
+const artImg = (src, w, h, cls = 'hc-img') => src ? `<img class="${cls}" src="${esc(artUrl(src, w, h))}" alt="" loading="lazy" onerror="this.remove()">` : '';
+
+// The guide's programme of a match (it carries the broadcaster's picture), or null.
+function eventProg(e) {
+  if (!e.home || !epg?.pub) return null;
+  for (const l of epg.matchAt(e.t, e.home, e.away)) {
+    const p = l.find(x => Math.abs(x.start - e.t) <= 1200);
+    if (p) return p;
+  }
+  return null;
+}
+
+// Picture of a recording: its programme in the channel's guide.
+function recProg(r) {
+  const ch = liveById(r.ch), l = ch && epg?.byName(ch.name);
+  return l?.find(p => r.prog ? p.start === r.prog : p.start <= r.start + 600 && p.end > r.start + 600) || null;
+}
+
+const bigCrests = e => `<span class="hc-vs">${crest(e.hi)}<b>–</b>${crest(e.ai)}</span>`;
+
 function chanCard(it, key, act, label = '') {
   const e = settings.epg && epg?.get(it.id);
-  return card(key, act, 'ch', `${logoHtml(it)}<span class="hc-body">
+  return card(key, act, 'ch', `<span class="hc-art${e?.now?.img ? '' : ' noimg'}">${artImg(e?.now?.img, 480, 270)}${logoHtml(it)}</span><span class="hc-body">
       ${label ? `<span class="hc-tag">${esc(label)}</span>` : ''}
       <span class="hc-name">${esc(it.name)}</span>
       ${e?.now ? `<span class="hc-sub"><b>${hhmm(e.now.start)}</b> ${esc(e.now.title)}</span><span class="bar"><i style="width:${Math.round(e.progress * 100)}%"></i></span>` : '<span class="hc-sub dim">En directo</span>'}
@@ -1013,7 +1034,8 @@ function chanCard(it, key, act, label = '') {
 function eventCard(e, key) {
   const now = Date.now() / 1000, live = e.t <= now && e.end > now;
   const ch = eventChannels(e).find(c => c.item);
-  return card(key, () => playEvent(e), 'ev' + (live ? ' live' : ''), `<span class="hc-body">
+  const img = eventProg(e)?.img;
+  return card(key, () => playEvent(e), 'ev' + (live ? ' live' : ''), `<span class="hc-art${img ? '' : ' plain'}">${img ? artImg(img, 480, 270) : e.home ? bigCrests(e) : `<span class="hc-sport">${icon(e.sport)}</span>`}</span><span class="hc-body">
       <span class="hc-tag">${live ? '<b class="ag-live">DIRECTO</b>' : `${esc(dayLabel(e.t)[0].toUpperCase() + dayLabel(e.t).slice(1))} ${hhmmOf(e.t)}`}${reminderFor(e) ? ' 🔔' : ''}${eventRec(e) ? ' ⏺' : ''} · ${esc(e.comp)}</span>
       <span class="hc-match">${matchTitle(e, isTeam)}</span>
       <span class="hc-sub">${ch ? `▶ ${esc(ch.name)}` : '<span class="dim">No está en tu lista</span>'}</span>
@@ -1022,8 +1044,8 @@ function eventCard(e, key) {
 }
 
 function recCard(r, key, pos) {
-  const dur = r.duration || 0;
-  return card(key, () => onRecClick({ ...r, rec: true }, null, pos), 'rec' + (r.state === 'recording' ? ' on-air' : ''), `<span class="hc-body">
+  const dur = r.duration || 0, img = recProg(r)?.img;
+  return card(key, () => onRecClick({ ...r, rec: true }, null, pos), 'rec' + (r.state === 'recording' ? ' on-air' : ''), `<span class="hc-art${img ? '' : ' plain'}">${img ? artImg(img, 480, 270) : '<span class="hc-sport">⏺</span>'}</span><span class="hc-body">
       <span class="hc-tag">${r.state === 'recording' ? '● Grabando' : '⏺ Grabación'}${pos ? ` · seguir en ${fmtClock(pos)}` : ''}</span>
       <span class="hc-name">${esc(r.title || 'Sin título')}</span>
       <span class="hc-sub dim">${esc(piStatus(r))}</span>
@@ -1031,11 +1053,72 @@ function recCard(r, key, pos) {
     </span>`);
 }
 
+// ---- hero: a big picture of what is worth watching now (live matches, the favourite teams'
+// first; then what the favourite channels show), rotating every few seconds.
+let heroList = [], heroAt = 0;
+
+function heroItems() {
+  const now = Date.now() / 1000, out = [], d = data.live;
+  const add = x => { if (x?.img && !out.some(o => o.key === x.key)) out.push(x); };
+  const live = agenda.events.filter(e => e.t <= now && e.end > now && sportShown(e) && playable(e)).sort((a, b) => isMine(b) - isMine(a));
+  const soon = agenda.events.filter(e => e.t > now && e.t < now + 3 * 3600 && isMine(e) && playable(e));
+  for (const e of [...live, ...soon]) {
+    const p = eventProg(e), ch = eventChannels(e).find(c => c.item);
+    add(p && {
+      key: 'ev:' + e.id, img: p.img, act: () => playEvent(e),
+      tag: e.t <= now ? `<b class="ag-live">DIRECTO</b> ${esc(e.comp)}` : `${isTeam(e.home) || isTeam(e.away) ? '★ ' : ''}Hoy ${hhmmOf(e.t)} · ${esc(e.comp)}`,
+      title: matchTitle(e, isTeam), sub: ch ? `▶ ${esc(ch.name)}` : '', progress: e.t <= now ? elapsed(e) : null,
+    });
+  }
+  if (d) {
+    const favItems = favList('live');
+    favItems.forEach((it, i) => {
+      const e = settings.epg && epg?.get(it.id);
+      if (!e?.now) return;
+      add({
+        key: 'ch:' + it.id, img: e.now.img, act: () => confirmBusy().then(ok => { if (ok) openLive(favItems, i, 'Favoritos', FAV); }),
+        tag: `<b class="ag-live">DIRECTO</b> ${esc(it.name)}`, title: esc(e.now.title),
+        sub: `${hhmm(e.now.start)}–${hhmm(e.now.end)}${e.next ? ` · Después: ${esc(e.next.title)}` : ''}`, progress: e.progress,
+      });
+    });
+  }
+  return out.slice(0, 6);
+}
+
+function heroInner(h) {
+  return `${artImg(h.img, 1280, 720, 'hero-img')}<span class="hero-shade"></span>
+    <span class="hero-txt"><span class="hero-tag">${h.tag}</span><span class="hero-title">${h.title}</span>
+      ${h.sub ? `<span class="hero-sub">${h.sub}</span>` : ''}
+      ${h.progress != null ? `<span class="bar"><i style="width:${Math.round(h.progress * 100)}%"></i></span>` : ''}
+      <span class="hero-go">▶ Ver ahora</span></span>
+    ${heroList.length > 1 ? `<span class="hero-dots">${heroList.map((_, i) => `<i class="${i === heroAt ? 'on' : ''}"></i>`).join('')}</span>` : ''}`;
+}
+
+function heroHtml() {
+  const prev = heroList[heroAt]?.key;
+  heroList = heroItems();
+  heroAt = Math.max(0, heroList.findIndex(h => h.key === prev));
+  const h = heroList[heroAt];
+  if (!h) return '';
+  return `<section class="h-hero">${card('hero', () => heroList[heroAt]?.act(), 'hero', heroInner(h))}</section>`;
+}
+
+setInterval(() => {
+  const b = $('#home .hcard.hero');
+  if (!b || $('#home').hidden || document.hidden || player.isOpen || heroList.length < 2 || b.classList.contains('kfocus') || b.matches(':hover')) return;
+  heroAt = (heroAt + 1) % heroList.length;
+  b.innerHTML = heroInner(heroList[heroAt]);
+  // Next picture downloaded ahead
+  const n = heroList[(heroAt + 1) % heroList.length];
+  if (n) new Image().src = artUrl(n.img, 1280, 720);
+}, 9000);
+
 const fmtClock = s => { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60; return h ? `${h}:${String(m).padStart(2, '0')} h` : `${m} min`; };
 
 function card(key, act, cls, html) {
   homeActs.push(act);
-  return `<button class="hcard ${cls}" data-h="${homeActs.length - 1}" data-key="${esc(key)}">${html}</button>`;
+  const pic = html.startsWith('<span class="hc-art') ? ' pic' : '';
+  return `<button class="hcard ${cls}${pic}" data-h="${homeActs.length - 1}" data-key="${esc(key)}">${html}</button>`;
 }
 
 function renderHome() {
@@ -1056,6 +1139,8 @@ function renderHome() {
     el.innerHTML = '<div class="empty-note"><span class="spinner small"></span>Cargando…</div>';
     return;
   }
+  const hero = heroHtml();
+  if (hero) secs.push(hero);
   // Continue watching
   const cont = [];
   for (const h of hist) {
@@ -1607,6 +1692,7 @@ function updatePlayerEpg(it) {
   updatePlayerButtons(it);
   if (player.cu) return player.setInfo(player.cuInfo || '');
   const e = epg?.get(it.id);
+  player.setArt(artUrl(e?.now?.img, 1280, 720));
   if (!e?.now) return player.setInfo('');
   player.setInfo(`<b>Ahora</b> ${esc(e.now.title)} <span class="dim">${hhmm(e.now.start)}–${hhmm(e.now.end)}</span>` +
     (e.next ? ` · <b>Después</b> ${esc(e.next.title)} <span class="dim">${hhmm(e.next.start)}</span>` : ''));
@@ -1787,6 +1873,7 @@ function renderGuide(ch, list) {
     return;
   }
   let lastDay = '', html = '';
+  const pics = progs.some(p => p.img);
   progs.forEach((p, i) => {
     const day = dayLabel(p.start);
     if (day !== lastDay) { html += `<div class="g-day">${esc(day[0].toUpperCase() + day.slice(1))}</div>`; lastDay = day; }
@@ -1807,6 +1894,7 @@ function renderGuide(ch, list) {
       btns += `<button data-act="rec" class="${saved ? 'on' : ''}">${saved ? (recorder ? '✓ Programada' : '✓ Guardado') : (recorder ? '⏺ Grabar' : '⏺ Guardar')}</button>`;
     }
     html += `<div class="g-row ${state}${state === 'past' && !avail ? ' gone' : ''}" data-i="${i}">
+      ${pics ? `<div class="g-img">${artImg(p.img, 192, 108, '')}</div>` : ''}
       <div class="g-time">${hhmm(p.start)}–${hhmm(p.end)}</div>
       <div class="grow"><div class="name">${esc(p.title || 'Sin título')}</div><div class="meta">${esc(meta)}</div></div>
       ${btns}</div>`;
@@ -2007,6 +2095,7 @@ function playPiRec(r, pos = null) {
     },
     seekbar: { start, planned: r.state === 'recording' ? r.end - start : 0, growing: () => piRecs.find(x => x.id === r.id)?.state === 'recording' },
   }));
+  player.setArt(artUrl(recProg(r)?.img, 1280, 720));
 }
 
 const activeRec = () => piRecs.find(r => r.state === 'recording');

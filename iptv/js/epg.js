@@ -4,12 +4,24 @@
 //  3. get_short_epg per channel, fetched lazily for what is on screen
 //     (few concurrent requests, newest request wins, cached until the current programme ends).
 
-import { channelKey, isForeign } from './backups.js?v=20261018g';
+import { channelKey, isForeign } from './backups.js?v=20261018h';
 
 const CONCURRENCY = 3;
 // Daily by .github/workflows/epg.yml in lusob.github.io (tools/epg.py), on a branch of its own.
 const GUIDE_URL = 'https://raw.githubusercontent.com/lusob/lusob.github.io/epg/epg.json';
 const EMPTY_TTL = 30 * 60e3;
+
+// Programme pictures of epg.json, shortened by tools/epg.py: "m<id>" Movistar+ (its 1920×1080
+// still), "o<n>" Orange TV poster, "s<path>" Sincroguía, or a URL.
+const ART = {
+  m: id => `https://www.movistarplus.es/recorte/n/ficha/${id}`,
+  o: n => `https://orangetv.orange.es/pc/api/rtv/v1/images/epg/VERTICAL/VERTICAL_${n}.jpg`,
+  s: path => `https://cdn.sincroguia.tv/storage/${path}`,
+};
+const artSrc = code => !code ? '' : /^https?:/.test(code) ? code : ART[code[0]]?.(code.slice(1)) || '';
+// Resized and cropped to w×h by images.weserv.nl (an open-source image proxy): a few KB instead
+// of a 1920×1080 JPEG, which TV browsers would also have to decode in full.
+export const artUrl = (src, w, h) => src ? `https://images.weserv.nl/?url=${encodeURIComponent(src)}&w=${w}&h=${h}&fit=cover&a=attention&output=jpg&q=72` : '';
 
 export class Epg {
   constructor(api, onUpdate, nameOf) {
@@ -40,8 +52,9 @@ export class Epg {
         const r = await fetch(GUIDE_URL);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();
+        const imgs = (j.img || []).map(artSrc);
         for (const c of j.ch) {
-          const list = c.p.map(([a, m, title]) => ({ title, desc: '', start: j.base + a * 60, end: j.base + (a + m) * 60 }));
+          const list = c.p.map(([a, m, title, img]) => ({ title, desc: '', img: img != null ? imgs[img] || '' : '', start: j.base + a * 60, end: j.base + (a + m) * 60 }));
           for (const n of c.n) {
             const k = !isForeign(n) && channelKey(n);
             if (k && !pub.has(k)) pub.set(k, list);

@@ -5,8 +5,8 @@
 //   programme; nothing changes until OK.
 // - Right (with the footer shown) or 0: back to the channel watched before.
 
-import { esc, initials, VList } from './ui.js?v=20261018g';
-import { hhmm } from './epg.js?v=20261018g';
+import { esc, initials, VList } from './ui.js?v=20261018h';
+import { hhmm, artUrl } from './epg.js?v=20261018h';
 
 const PILOT_HIDE = 6000;   // ms without keys before the footer goes away (without switching)
 const INFO_HIDE = 4000;    // footer shown briefly after every channel change
@@ -143,7 +143,9 @@ export class Zapper {
     if (!it) return;
     const e = this.ctx.epg()?.get(it.id);
     const here = this.pIdx === p.index;
+    const img = e?.now?.img;
     this.pilotEl.innerHTML = `
+      ${img ? `<div class="pl-art"><img src="${esc(artUrl(img, 320, 180))}" alt="" onerror="this.parentNode.remove()"></div>` : ''}
       <div class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" onerror="this.remove()">` : ''}</div>
       <div class="grow">
         <div class="pl-name"><span class="z-num">${this.pIdx + 1}</span> ${esc(it.name)}
