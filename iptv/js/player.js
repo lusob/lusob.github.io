@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261018d';
+import { startEngine, resetVideo } from './engines.js?v=20261018e';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -33,7 +33,7 @@ export class Player {
     this.title = root.querySelector('#pTitle');
     this.bufEl = root.querySelector('#pBuf');
     // Live: show the cushion every second, and give back buffer after a long time without cuts.
-    setInterval(() => { this.drawBuf(); this.frozen(); }, 1000);
+    setInterval(() => { this.drawBuf(); this.frozen(); this.applySkip(); }, 1000);
     setInterval(() => this.relax(), 60e3);
     this.info = root.querySelector('#pInfo');
     this.msgEl = root.querySelector('#pMsg');
@@ -94,8 +94,10 @@ export class Player {
     const cuPlay = root.querySelector('#cuPlay');
     cuPlay.onclick = () => { if (this.video.paused) this.play(); else this.video.pause(); };
     for (const ev of ['play', 'pause', 'playing']) this.video.addEventListener(ev, () => { cuPlay.textContent = this.video.paused ? '▶' : '❚❚'; });
-    root.querySelector('#cuBack').onclick = () => this.sk ? this.skSeek(this.video.currentTime - 300) : this.seek(this.cuPos() - 300);
-    root.querySelector('#cuFwd').onclick = () => this.sk ? this.skSeek(this.video.currentTime + 300) : this.seek(this.cuPos() + 300);
+    for (const b of root.querySelectorAll('#pCu [data-s]')) {
+      const d = +b.dataset.s;   // seconds back (−) or forward
+      b.onclick = () => this.sk ? this.skSeek(this.video.currentTime + d) : this.seek(this.cuPos() + d);
+    }
     root.querySelector('#cuLive').onclick = () => this.sk ? this.skSeek(Infinity) : this.goLive('');
     root.querySelector('#cuTrack').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();
@@ -205,7 +207,12 @@ export class Player {
 
   // Attempts of the current source (catch-up: starting at the current position, whole minutes).
   prepare() {
-    if (this.cu) this.cu.base = Math.floor(this.cu.base / 60) * 60;
+    // The provider's archive starts on whole minutes: the seconds left over are skipped once it plays.
+    if (this.cu) {
+      const b = Math.floor(this.cu.base / 60) * 60;
+      this.cuSkip = this.cu.base - b;
+      this.cu.base = b;
+    }
     this.attempts = this.sources[this.src].attempts(this.cu ? this.cu.base : 0);
     // iPhone / iPad: Safari's own HLS player is far more reliable than hls.js there.
     if (IOS) this.attempts = [...this.attempts.filter(a => a[0] === 'native-hls'), ...this.attempts.filter(a => a[0] !== 'native-hls')];
@@ -244,6 +251,13 @@ export class Player {
     const now = Date.now() / 1000;
     pos = Math.max(this.cu.start, Math.min(pos, this.cu.end - 30));
     if (pos > now - LIVE_EDGE) return this.goLive('');
+    // Short jumps (±30 s) within what is already downloaded: no need to reconnect.
+    const v = this.video, to = v.currentTime + pos - this.cuPos();
+    if (this.cuT0 != null && !this.cuSkip && this.inBuffer(to)) {
+      v.currentTime = to;
+      this.lastSeek = this.nudgedAt = Date.now();
+      return this.drawCu();
+    }
     this.cu.base = pos;
     this.resetCounters();
     this.prepare();
@@ -484,6 +498,22 @@ export class Player {
     this.lastSeek = this.nudgedAt = Date.now();
   }
 
+  inBuffer(t) {
+    const b = this.video.buffered;
+    for (let i = 0; i < b.length; i++) if (b.start(i) <= t && t < b.end(i) - 1) return true;
+    return false;
+  }
+
+  // Catch-up opened on the minute before the wanted second: jump the rest once it is downloaded.
+  applySkip() {
+    if (!this.cu || !this.cuSkip || this.cuT0 == null || this.filling) return;
+    const to = this.cuT0 + this.cuSkip;
+    if (!this.inBuffer(to)) return;
+    this.cuSkip = 0;
+    this.video.currentTime = to;
+    this.lastSeek = this.nudgedAt = Date.now();
+  }
+
   ahead() {
     const v = this.video, b = v.buffered;
     for (let i = 0; i < b.length; i++) {
@@ -600,7 +630,7 @@ export class Player {
 
   onPlaying() {
     if (this.filling) return;
-    if (this.cu && this.cuT0 == null) this.cuT0 = this.video.currentTime;
+    if (this.cu && this.cuT0 == null) { this.cuT0 = this.video.currentTime; this.applySkip(); }
     this.lastTime = this.video.currentTime;
     this.played = true;
     this.clearTimer();

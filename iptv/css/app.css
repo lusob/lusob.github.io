@@ -265,6 +265,12 @@ body.in-series #back { display: inline-block; }
 #cuFill::after { content: ""; position: absolute; right: -9px; top: -5px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
 #player.idle #pCu { opacity: 0; pointer-events: none; }
 #cuLive { color: #ff6b6b; }
+@media (max-width: 760px) {
+  /* Portrait phone: the timeline takes a row of its own above the buttons */
+  #pCu { flex-wrap: wrap; justify-content: center; gap: 6px 8px; }
+  #cuTrack { order: -1; flex: 1 1 100%; height: 32px; }
+  #pCu .txt { padding: 0 10px; font-size: 15px; }
+}
 
 /* Channel list over the live player (Left) */
 #zap {
