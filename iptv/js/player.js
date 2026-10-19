@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261019b';
+import { startEngine, resetVideo } from './engines.js?v=20261019c';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -192,7 +192,7 @@ export class Player {
     this.liveSources = r.liveSources || null;
     this.cu = r.catchup ? { start: r.catchup.start, end: r.catchup.end, base: r.catchup.pos ?? r.catchup.start } : null;
     // A recording (possibly still growing): its own seek bar over what has been recorded so far.
-    this.sk = r.seekbar ? { start: r.seekbar.start, planned: r.seekbar.planned, growing: () => !!r.seekbar.growing?.() } : null;
+    this.sk = r.seekbar ? { start: r.seekbar.start, planned: r.seekbar.planned, growing: () => !!r.seekbar.growing?.(), gaps: () => r.seekbar.gaps?.() || [] } : null;
     this.src = 0;
     this.switches = 0;
     this.resetCounters();
@@ -297,6 +297,15 @@ export class Player {
     this.cuBar.querySelector('#cuAvail').style.width = `${Math.min(1, avail / span) * 100}%`;
     this.cuBar.querySelector('#cuTime').textContent = hm(t);
     this.cuBar.querySelector('#cuEnd').textContent = hm(span);
+    // Cuts of the recording: red marks where something is missing
+    const gaps = this.sk.gaps(), key = gaps.map(g => g.join(':')).join() + '|' + Math.round(span);
+    if (this.gapKey !== key) {
+      this.gapKey = key;
+      const track = this.cuBar.querySelector('#cuTrack');
+      track.querySelectorAll('.cu-gap').forEach(x => x.remove());
+      track.insertAdjacentHTML('beforeend', gaps.map(([at, lost]) =>
+        `<i class="cu-gap" style="left:${Math.min(100, at / span * 100)}%" title="Corte: faltan ${Math.round(lost)} s"></i>`).join(''));
+    }
     const live = this.cuBar.querySelector('#cuLive');
     live.hidden = !this.sk.growing();
     live.textContent = avail - t > 30 ? 'Ir al final' : '● Al día';
@@ -817,6 +826,8 @@ export class Player {
     clearInterval(this.cuTimer);
     this.cu = null;
     this.sk = null;
+    this.gapKey = null;
+    this.cuBar?.querySelectorAll('.cu-gap').forEach(x => x.remove());
     this.cuBar.hidden = true;
     this.root.classList.remove('catchup');
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});

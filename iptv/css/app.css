@@ -261,6 +261,8 @@ body.in-series #back { display: inline-block; }
 #cuTrack::before { right: 0; background: rgb(255 255 255 / .15); }
 #cuAvail { background: rgb(255 255 255 / .3); }
 #cuFill { background: var(--accent); }
+.cu-gap { position: absolute; top: 50%; width: 4px; height: 20px; margin: -10px 0 0 -2px; border-radius: 2px; background: #ff4d4d; pointer-events: none; z-index: 1; }
+.hcard .cuts { color: #ffb347; }
 #cuFill::after { content: ""; position: absolute; right: -9px; top: -5px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
 #player.idle #pCu { opacity: 0; pointer-events: none; }
 #cuLive { color: #ff6b6b; }

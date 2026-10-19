@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261019b';
-import * as store from './store.js?v=20261019b';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261019b';
-import { Player } from './player.js?v=20261019b';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261019b';
-import { Grid } from './grid.js?v=20261019b';
-import { Mosaic } from './mosaic.js?v=20261019b';
-import { initRemote } from './remote.js?v=20261019b';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261019b';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261019b';
-import { Zapper } from './zap.js?v=20261019b';
-import { initTouch } from './touch.js?v=20261019b';
-import { initSync } from './sync.js?v=20261019b';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261019c';
+import * as store from './store.js?v=20261019c';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261019c';
+import { Player } from './player.js?v=20261019c';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261019c';
+import { Grid } from './grid.js?v=20261019c';
+import { Mosaic } from './mosaic.js?v=20261019c';
+import { initRemote } from './remote.js?v=20261019c';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261019c';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261019c';
+import { Zapper } from './zap.js?v=20261019c';
+import { initTouch } from './touch.js?v=20261019c';
+import { initSync } from './sync.js?v=20261019c';
 
-const VERSION = '2026-10-19b';
+const VERSION = '2026-10-19c';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -1081,7 +1081,7 @@ function eventCard(e, key) {
 function recCard(r, key, pos) {
   const dur = r.duration || 0, img = recProg(r)?.img;
   return card(key, () => onRecClick({ ...r, rec: true }, null, pos), 'rec' + (r.state === 'recording' ? ' on-air' : ''), `<span class="hc-art${img ? '' : ' plain'}">${img ? artImg(img, 480, 270) : '<span class="hc-sport">⏺</span>'}</span><span class="hc-body">
-      <span class="hc-tag">${r.state === 'recording' ? '● Grabando' : '⏺ Grabación'}${pos ? ` · seguir en ${fmtClock(pos)}` : ''}</span>
+      <span class="hc-tag">${r.state === 'recording' ? '● Grabando' : '⏺ Grabación'}${pos ? ` · seguir en ${fmtClock(pos)}` : ''}${r.gaps?.length ? ` · <span class="cuts">⚠ ${r.gaps.length === 1 ? '1 corte' : `${r.gaps.length} cortes`}</span>` : ''}</span>
       <span class="hc-name">${esc(r.title || 'Sin título')}</span>
       <span class="hc-sub dim">${esc(piStatus(r))}</span>
       ${pos && dur ? `<span class="bar"><i style="width:${Math.round(Math.min(1, pos / dur) * 100)}%"></i></span>` : ''}
@@ -2179,10 +2179,24 @@ function playPiRec(r, pos = null) {
       slow: 'la Raspberry Pi tarda en responder',
       fail: 'No se pudo reproducir la grabación desde la Raspberry Pi. Comprueba que este dispositivo está en la red de casa y vuelve a intentarlo.',
     },
-    seekbar: { start, planned: r.state === 'recording' ? r.end - start : 0, growing: () => piRecs.find(x => x.id === r.id)?.state === 'recording' },
+    seekbar: { start, planned: r.state === 'recording' ? r.end - start : 0, growing: () => piRecs.find(x => x.id === r.id)?.state === 'recording',
+      gaps: () => piRecs.find(x => x.id === r.id)?.gaps || r.gaps || [] },
   }));
   player.setArt(artUrl(recProg(r)?.img, 1280, 720));
+  if (r.gaps?.length) toast(`Esta grabación tiene ${cutsText(r).slice(2)}: están marcados en rojo en la barra de tiempo`, 6000);
 }
+
+// Playing a recording across one of its cuts: say how much is missing there.
+let recT = 0;
+player.video.addEventListener('timeupdate', () => {
+  const t = player.video.currentTime;
+  if (playerKind === 'rec' && player.isOpen && t > recT && t - recT < 3) {
+    const r = piRecs.find(x => x.id === player.current?.id) || player.current;
+    const g = (r?.gaps || []).find(([at]) => at > 0 && at > recT && at <= t);
+    if (g) toast(`Corte en la grabación: aquí faltan ≈${fmtLost(g[1])}`, 5000);
+  }
+  recT = t;
+});
 
 const activeRec = () => piRecs.find(r => r.state === 'recording');
 
@@ -2230,13 +2244,24 @@ function confirmBusy() {
   });
 }
 
+// Cuts of a recording (recorder.py: gaps [[position s, lost s]]): "⚠ 2 cortes, ≈3 min perdidos".
+const lostOf = r => (r.gaps || []).reduce((a, g) => a + g[1], 0);
+const fmtLost = s => {
+  s = Math.round(s);
+  if (s < 60) return `${s} s`;
+  if (s < 600) return `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ''}`;
+  return s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round(s / 60) % 60} min`;
+};
+const cutsText = r => r.gaps?.length ? `⚠ ${r.gaps.length === 1 ? '1 corte' : `${r.gaps.length} cortes`}, ≈${fmtLost(lostOf(r))} perdidos` : '';
+
 function piStatus(r) {
   const size = r.size ? ` · ${fmtSize(r.size)}` : '';
+  const cuts = r.gaps?.length ? ` · ${cutsText(r)}` : '';
   const switched = new Set((r.parts || []).filter(p => p.segments).map(p => p.source)).size > 1 ? ' · usó respaldo' : '';
   switch (r.state) {
     case 'scheduled': return `Programada · ${dayLabel(r.start)} ${hhmm(r.start)}–${hhmm(r.end)}`;
-    case 'recording': return `● Grabando${r.current ? ` de ${r.current}` : ''} · ${fmtDur(r.duration || 1)}${size} · toca para verla desde el principio`;
-    case 'done': return r.duration ? `${dayLabel(r.start)} ${hhmm(r.start)} · ${fmtDur(r.duration)}${size}${switched}` : 'No se grabó nada';
+    case 'recording': return `● Grabando${r.current ? ` de ${r.current}` : ''} · ${fmtDur(r.duration || 1)}${size}${cuts} · toca para verla desde el principio`;
+    case 'done': return r.duration ? `${dayLabel(r.start)} ${hhmm(r.start)} · ${fmtDur(r.duration)}${size}${switched}${cuts}` : 'No se grabó nada';
     default: return `No se pudo grabar · ${r.log?.at(-1)?.[1] || ''}`;
   }
 }
