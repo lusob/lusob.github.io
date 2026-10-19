@@ -7,8 +7,8 @@
 // - «+ info» (OK on the channel being watched, the Info key or a tap on the button): the footer
 //   grows with the programme's genre line and synopsis (public guide).
 
-import { esc, initials, VList } from './ui.js?v=20261019d';
-import { hhmm, artUrl } from './epg.js?v=20261019d';
+import { esc, initials, VList } from './ui.js?v=20261019e';
+import { hhmm, artUrl } from './epg.js?v=20261019e';
 
 const PILOT_HIDE = 6000;   // ms without keys before the footer goes away (without switching)
 const INFO_HIDE = 4000;    // footer shown briefly after every channel change
