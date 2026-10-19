@@ -1,17 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261018h';
-import * as store from './store.js?v=20261018h';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261018h';
-import { Player } from './player.js?v=20261018h';
-import { Epg, hhmm, artUrl } from './epg.js?v=20261018h';
-import { Grid } from './grid.js?v=20261018h';
-import { Mosaic } from './mosaic.js?v=20261018h';
-import { initRemote } from './remote.js?v=20261018h';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261018h';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261018h';
-import { Zapper } from './zap.js?v=20261018h';
-import { initTouch } from './touch.js?v=20261018h';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261019a';
+import * as store from './store.js?v=20261019a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261019a';
+import { Player } from './player.js?v=20261019a';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261019a';
+import { Grid } from './grid.js?v=20261019a';
+import { Mosaic } from './mosaic.js?v=20261019a';
+import { initRemote } from './remote.js?v=20261019a';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261019a';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261019a';
+import { Zapper } from './zap.js?v=20261019a';
+import { initTouch } from './touch.js?v=20261019a';
+import { initSync } from './sync.js?v=20261019a';
 
-const VERSION = '2026-10-18h';
+const VERSION = '2026-10-19a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -43,6 +44,8 @@ ui.hideDead ??= false;
 
 const player = new Player($('#player'), () => settings);
 player.saveSettings = () => store.set('settings', settings);
+delete settings.bufLearned;      // one learned buffer for every channel (before 2026-10-19)
+delete settings.bufLearnedVod;
 const folderList = new VList($('#folders'), 64, renderFolderRow, onFolderClick);
 const itemList = new VList($('#items'), 76, renderItemRow, onItemClick, () => scheduleEpg());
 let epg = null;
@@ -92,6 +95,7 @@ const remote = initRemote({
   closeSeries: () => closeSeries(),
   narrow: () => matchMedia('(max-width: 760px)').matches,
   showFolders: () => document.body.classList.remove('show-items'),
+  heroStep: d => heroStep(d),
 });
 
 // ---------------------------------------------------------------- session
@@ -826,14 +830,31 @@ setInterval(checkReminders, 15000);
 
 // ---- options of a match (⋯) and of a later programme in the horizontal guide
 
-let menuFns = [];
-function showMenu(title, sub, entries) {
+// opts: { img (programme picture), titleHtml, prog (guide programme: its synopsis is fetched) }
+let menuFns = [], menuSeq = 0;
+function showMenu(title, sub, entries, opts = {}) {
   menuFns = entries.map(x => x.fn);
-  $('#menuTitle').textContent = title;
+  const seq = ++menuSeq;
+  const art = $('#menuArt');
+  art.innerHTML = opts.img ? artImg(opts.img, 960, 540, 'menu-img') : opts.artHtml || '';
+  art.hidden = !art.innerHTML;
+  $('#menuDialog').classList.toggle('sheet', !art.hidden || !!opts.prog);
+  if (opts.titleHtml) $('#menuTitle').innerHTML = opts.titleHtml; else $('#menuTitle').textContent = title;
   $('#menuSub').innerHTML = sub;
   $('#menuSub').hidden = !sub;
-  $('#menuList').innerHTML = entries.map((x, i) => `<button type="button" data-m="${i}">${esc(x.label)}</button>`).join('');
+  $('#menuInfo').hidden = $('#menuDesc').hidden = true;
+  if (opts.prog && epg) {
+    epg.details(opts.prog).then(({ desc, info }) => {
+      if (seq !== menuSeq) return;
+      $('#menuInfo').textContent = info;
+      $('#menuInfo').hidden = !info;
+      $('#menuDesc').textContent = desc;
+      $('#menuDesc').hidden = !desc;
+    });
+  }
+  $('#menuList').innerHTML = entries.map((x, i) => `<button type="button" data-m="${i}"${x.main ? ' class="primary"' : ''}>${esc(x.label)}</button>`).join('');
   $('#menuDialog').showModal();
+  $('#menuDialog .card').scrollTop = 0;
   $('#menuList button')?.focus();
 }
 $('#menuList').addEventListener('click', e => {
@@ -844,9 +865,10 @@ $('#menuList').addEventListener('click', e => {
 });
 $('#menuClose').addEventListener('click', () => $('#menuDialog').close());
 
+// The info sheet of a match: the broadcaster's picture and synopsis (public guide), Watch first.
 function eventMenu(e) {
   const now = Date.now() / 1000, chans = eventChannels(e), entries = [];
-  chans.forEach((c, i) => { if (c.item) entries.push({ label: `▶ Ver en ${c.name}`, fn: () => playEvent(e, 'ch:' + i) }); });
+  chans.forEach((c, i) => { if (c.item) entries.push({ label: `▶ ${e.t > now ? 'Ver' : 'Ver ahora'} en ${c.name}`, main: !entries.length, fn: () => playEvent(e, 'ch:' + i) }); });
   if (recorder && e.end > now && playable(e)) {
     const r = eventRec(e);
     entries.push(r ? { label: '⏺ Grabación programada: cambiar o borrar', fn: () => editRec(r) } : { label: '⏺ Grabar en la Raspberry Pi', fn: () => recEvent(e) });
@@ -858,11 +880,17 @@ function eventMenu(e) {
   }
   if (e.home) for (const n of [e.home, e.away]) entries.push({ label: isTeam(n) ? `☆ Dejar de seguir a ${n}` : `★ Seguir a ${n}`, fn: () => toggleTeam(n) });
   chans.forEach(c => { if (!c.item && c.raw) entries.push({ label: `Elegir qué canal de tu lista es «${c.name}»`, fn: () => editAlias(c.raw) }); });
-  showMenu(eventName(e), `${esc(e.comp)} · ${esc(dayLabel(e.t))} ${hhmm(e.t)}`, entries);
+  const p = eventProg(e), live = e.t <= now && e.end > now;
+  const when = live ? `<b class="ag-live">DIRECTO</b> · empezó a las ${hhmm(e.t)}` : `${esc(dayLabel(e.t))} ${hhmm(e.t)}${e.end <= now ? ' (terminado)' : ''}`;
+  const where = chans.map(c => c.item ? esc(c.name) : `<span class="dim">${esc(c.name)}</span>`).join(', ');
+  showMenu(eventName(e), `${icon(e.sport)} ${esc(e.comp)}${e.stage ? ` · ${esc(e.stage)}` : ''}<br>${when}${where ? `<br>📺 ${where}` : ''}`, entries, {
+    img: p?.img, titleHtml: matchTitle(e, isTeam), prog: p,
+    artHtml: e.home ? `<span class="menu-crests">${bigCrests(e)}</span>` : '',
+  });
 }
 
 function progMenu(ch, p) {
-  const now = Date.now() / 1000, entries = [{ label: `▶ Ver ${ch.name} ahora`, fn: () => confirmBusy().then(ok => { if (ok) openLive([ch], 0, ch.name, null); }) }];
+  const now = Date.now() / 1000, entries = [{ label: `▶ Ver ${ch.name} ahora`, main: true, fn: () => confirmBusy().then(ok => { if (ok) openLive([ch], 0, ch.name, null); }) }];
   if (recorder) {
     const r = recList().find(x => x.ch === ch.id && x.prog === p.start);
     entries.push(r ? { label: '⏺ Grabación programada: cambiar o borrar', fn: () => editRec(r) }
@@ -872,7 +900,7 @@ function progMenu(ch, p) {
   entries.push(r ? { label: '🔕 Quitar el aviso', fn: () => removeReminder(r.id) }
     : { label: '🔔 Avisarme cuando empiece', fn: () => addReminder({ t: p.start, title: p.title, sub: ch.name, ch: ch.id }) });
   entries.push({ label: '≡ Guía completa del canal', fn: () => openGuide(ch, p.start) });
-  showMenu(p.title || 'Sin título', `${esc(ch.name)} · ${esc(dayLabel(p.start))} ${hhmm(p.start)}–${hhmm(p.end)}`, entries);
+  showMenu(p.title || 'Sin título', `${esc(ch.name)} · ${esc(dayLabel(p.start))} ${hhmm(p.start)}–${hhmm(p.end)}`, entries, { img: p.img, prog: p });
 }
 
 const eventMark = e => ({ fav: isTeam, remind: !!reminderFor(e), rec: !!eventRec(e) });
@@ -1008,7 +1036,7 @@ const artImg = (src, w, h, cls = 'hc-img') => src ? `<img class="${cls}" src="${
 function eventProg(e) {
   if (!e.home || !epg?.pub) return null;
   for (const l of epg.matchAt(e.t, e.home, e.away)) {
-    const p = l.find(x => Math.abs(x.start - e.t) <= 1200);
+    const p = l.find(x => Math.abs(x.start - e.t) <= MATCH_EARLY);
     if (p) return p;
   }
   return null;
@@ -1035,7 +1063,7 @@ function eventCard(e, key) {
   const now = Date.now() / 1000, live = e.t <= now && e.end > now;
   const ch = eventChannels(e).find(c => c.item);
   const img = eventProg(e)?.img;
-  return card(key, () => playEvent(e), 'ev' + (live ? ' live' : ''), `<span class="hc-art${img ? '' : ' plain'}">${img ? artImg(img, 480, 270) : e.home ? bigCrests(e) : `<span class="hc-sport">${icon(e.sport)}</span>`}</span><span class="hc-body">
+  return card(key, () => eventMenu(e), 'ev' + (live ? ' live' : ''), `<span class="hc-art${img ? '' : ' plain'}">${img ? artImg(img, 480, 270) : e.home ? bigCrests(e) : `<span class="hc-sport">${icon(e.sport)}</span>`}</span><span class="hc-body">
       <span class="hc-tag">${live ? '<b class="ag-live">DIRECTO</b>' : `${esc(dayLabel(e.t)[0].toUpperCase() + dayLabel(e.t).slice(1))} ${hhmmOf(e.t)}`}${reminderFor(e) ? ' 🔔' : ''}${eventRec(e) ? ' ⏺' : ''} · ${esc(e.comp)}</span>
       <span class="hc-match">${matchTitle(e, isTeam)}</span>
       <span class="hc-sub">${ch ? `▶ ${esc(ch.name)}` : '<span class="dim">No está en tu lista</span>'}</span>
@@ -1059,7 +1087,7 @@ let heroList = [], heroAt = 0;
 
 function heroItems() {
   const now = Date.now() / 1000, out = [], d = data.live;
-  const add = x => { if (x?.img && !out.some(o => o.key === x.key)) out.push(x); };
+  const add = x => { if (x?.img && !out.some(o => o.key === x.key || o.img === x.img)) out.push(x); };   // one card per programme
   const live = agenda.events.filter(e => e.t <= now && e.end > now && sportShown(e) && playable(e)).sort((a, b) => isMine(b) - isMine(a));
   const soon = agenda.events.filter(e => e.t > now && e.t < now + 3 * 3600 && isMine(e) && playable(e));
   for (const e of [...live, ...soon]) {
@@ -1091,8 +1119,24 @@ function heroInner(h) {
       ${h.sub ? `<span class="hero-sub">${h.sub}</span>` : ''}
       ${h.progress != null ? `<span class="bar"><i style="width:${Math.round(h.progress * 100)}%"></i></span>` : ''}
       <span class="hero-go">▶ Ver ahora</span></span>
-    ${heroList.length > 1 ? `<span class="hero-dots">${heroList.map((_, i) => `<i class="${i === heroAt ? 'on' : ''}"></i>`).join('')}</span>` : ''}`;
+    ${heroList.length > 1 ? `<span class="hero-nav prev" data-hn="-1" aria-label="Anterior">‹</span><span class="hero-nav next" data-hn="1" aria-label="Siguiente">›</span>
+      <span class="hero-dots">${heroList.map((_, i) => `<i class="${i === heroAt ? 'on' : ''}" data-hi="${i}"></i>`).join('')}</span>` : ''}`;
 }
+
+// Show another picture of the hero (‹ ›, the dots, a swipe, Left / Right on the remote); the
+// rotation waits a while after that.
+let heroHeld = 0;
+function heroShow(i) {
+  const b = $('#home .hcard.hero');
+  if (!b || heroList.length < 2) return false;
+  heroAt = (i + heroList.length) % heroList.length;
+  b.innerHTML = heroInner(heroList[heroAt]);
+  heroHeld = Date.now();
+  const n = heroList[(heroAt + 1) % heroList.length];
+  if (n) new Image().src = artUrl(n.img, 1280, 720);
+  return true;
+}
+const heroStep = d => heroShow(heroAt + d);
 
 function heroHtml() {
   const prev = heroList[heroAt]?.key;
@@ -1105,12 +1149,9 @@ function heroHtml() {
 
 setInterval(() => {
   const b = $('#home .hcard.hero');
-  if (!b || $('#home').hidden || document.hidden || player.isOpen || heroList.length < 2 || b.classList.contains('kfocus') || b.matches(':hover')) return;
-  heroAt = (heroAt + 1) % heroList.length;
-  b.innerHTML = heroInner(heroList[heroAt]);
-  // Next picture downloaded ahead
-  const n = heroList[(heroAt + 1) % heroList.length];
-  if (n) new Image().src = artUrl(n.img, 1280, 720);
+  if (!b || $('#home').hidden || document.hidden || player.isOpen || heroList.length < 2 || b.classList.contains('kfocus') || b.matches(':hover') || Date.now() - heroHeld < 20000) return;
+  heroShow(heroAt + 1);
+  heroHeld = 0;
 }, 9000);
 
 const fmtClock = s => { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60; return h ? `${h}:${String(m).padStart(2, '0')} h` : `${m} min`; };
@@ -1196,8 +1237,21 @@ function renderHome() {
 }
 
 $('#home').addEventListener('click', e => {
+  const nav = e.target.closest('[data-hn], [data-hi]');
+  if (nav) return nav.dataset.hn ? heroStep(+nav.dataset.hn) : heroShow(+nav.dataset.hi);
   const c = e.target.closest('.hcard');
   if (c) homeActs[+c.dataset.h]?.();
+});
+// Swiping the hero sideways (phone, Tesla screen)
+let heroTouch = null;
+$('#home').addEventListener('touchstart', e => {
+  heroTouch = e.touches.length === 1 && e.target.closest('.hcard.hero') ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+}, { passive: true });
+$('#home').addEventListener('touchend', e => {
+  if (!heroTouch) return;
+  const t = e.changedTouches[0], dx = t.clientX - heroTouch.x, dy = t.clientY - heroTouch.y;
+  heroTouch = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { e.preventDefault(); heroStep(dx < 0 ? 1 : -1); }
 });
 setInterval(() => { if (!$('#home').hidden) renderHome(); }, 60000);
 
@@ -1566,7 +1620,7 @@ function onItemClick(it, i, act) {
   if (it.more) { expanded.add(it.more); return refreshItems(false); }
   if (query) pushRecent(query);
   if (it.rec) return onRecClick(it, act);
-  if (it.ev) return act === 'menu' ? eventMenu(it) : playEvent(it, act);
+  if (it.ev) return !act || act === 'menu' ? eventMenu(it) : playEvent(it, act);
   // A programme from the search: on now → watch its channel; later → its guide (to record it).
   if (it.prog) {
     if (act === 'guide' || it.prog.start > Date.now() / 1000) return openGuide(it.base, it.prog.start);
@@ -2020,6 +2074,30 @@ function onRecClick(r, act, pos = null) {
 // it records even with every screen off and switches to the backup channels when one cuts out.
 
 let recorder = null;   // last /api/status when served by the recorder
+let syncer = null;     // data shared with the other screens through the recorder (sync.js)
+
+// Another screen changed shared data (already in localStorage): load it and redraw.
+function syncedChanged(keys) {
+  if (keys.includes('settings')) {
+    Object.assign(settings, store.get('settings', {}));
+    applyVod();
+  }
+  if (keys.includes('teams')) {
+    teams = store.get('teams', []);
+    teamKeys = new Set(teams.map(norm));
+  }
+  if (keys.includes('recentQ')) recentQ = store.get('recentQ', []);
+  if (account && keys.some(k => k.endsWith(':' + account))) {
+    if (!api) return;
+    loadFavs();
+    shownCache = null;
+  }
+  eventChanCache.clear();
+  if (!api) return;
+  if (ui.tab === 'home') renderHome();
+  else { renderFolders(); refreshItems(false); }
+  if (!$('#grid').hidden) grid.refresh();
+}
 let piRecs = [];
 
 async function piApi(method, path, body) {
@@ -2039,6 +2117,7 @@ async function initRecorder() {
     if (typeof s.version !== 'string') return;
     recorder = s;
   } catch { return; }
+  syncer = initSync(piApi, syncedChanged);
   await loadPiRecs();
   setInterval(loadPiRecs, 10000);
   if (!recorder.ok) toast(`Grabador: ${recorder.error}`, 8000);
@@ -2496,6 +2575,9 @@ $('#settingsBtn').addEventListener('click', () => {
     if (u.max_connections) lines.push(`Conexiones: ${esc(u.active_cons ?? 0)} / ${esc(u.max_connections)}`);
     if (u.status) lines.push(`Estado: ${esc(u.status)}`);
   }
+  lines.push(syncer ? (syncer.status.ok ? '🔄 Sincronizado con la Raspberry: favoritos, equipos, avisos y «Seguir viendo» son los mismos en todas las pantallas que la abren desde su dirección'
+    : `🔄 Sin sincronizar con la Raspberry${syncer.status.error ? ` (${esc(syncer.status.error)})` : ''}`)
+    : '<span class="dim">Para compartir favoritos, equipos y «Seguir viendo» entre pantallas, abre la app desde la Raspberry (http://192.168.1.146:8090) en casa</span>');
   lines.push(`<span class="dim">Versión de la app: ${VERSION}</span>`);
   $('#accountInfo').innerHTML = lines.join('<br>');
   $('#diagOut').hidden = true;
@@ -2517,10 +2599,10 @@ $('#settingsBtn').addEventListener('click', () => {
 $('#settings').addEventListener('close', async () => {
   const v = $('#settings').returnValue;
   if (v === 'save') {
+    const buf = [settings.buffer, settings.bufferMax];
     settings.buffer = +$('#bufferInput').value;
     settings.bufferMax = Math.max(settings.buffer, +$('#bufferMaxInput').value);
-    delete settings.bufLearned;   // chosen by hand: start again from it
-    delete settings.bufLearnedVod;
+    if (buf[0] !== settings.buffer || buf[1] !== settings.bufferMax) delete settings.bufLearnedBy;   // chosen by hand: start again from it
     settings.scan = +$('#scanInput').value;
     settings.epg = $('#epgInput').checked;
     settings.autoFs = $('#autoFsInput').checked;
@@ -2665,6 +2747,24 @@ async function editTeams() {
   });
 }
 $('#teamsBtn').addEventListener('click', editTeams);
+
+// Empty «Continue watching» (a second press confirms it)
+let histArmed;
+$('#histBtn').addEventListener('click', () => {
+  const b = $('#histBtn');
+  if (!histArmed) {
+    b.textContent = '¿Seguro? Pulsa otra vez para vaciar';
+    histArmed = setTimeout(() => { histArmed = null; b.textContent = 'Vaciar «Seguir viendo»'; }, 4000);
+    return;
+  }
+  clearTimeout(histArmed);
+  histArmed = null;
+  b.textContent = 'Vaciar «Seguir viendo»';
+  hist = [];
+  store.set('hist:' + account, hist);
+  renderHome();
+  toast('«Seguir viendo» vaciado', 2500);
+});
 
 // Connection test: every list request with its time, size and number of items.
 $('#diagBtn').addEventListener('click', async () => {

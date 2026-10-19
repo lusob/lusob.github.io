@@ -492,7 +492,7 @@ body.no-folders #itemsPane { display: flex; }
 .hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: heroIn .6s ease-out; }
 @keyframes heroIn { from { opacity: 0; transform: scale(1.03); } to { opacity: 1; transform: none; } }
 .hero-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgb(13 15 19 / .92) 0%, rgb(13 15 19 / .6) 45%, transparent 75%), linear-gradient(0deg, rgb(13 15 19 / .7), transparent 50%); }
-.hero-txt { position: absolute; left: 28px; bottom: 26px; width: min(560px, 70%); display: flex; flex-direction: column; gap: 8px; }
+.hero-txt { position: absolute; left: 64px; bottom: 26px; width: min(560px, 70%); display: flex; flex-direction: column; gap: 8px; }
 .hero-tag { font-size: 14px; color: #c9cdd6; }
 .hero-title { font-size: 30px; font-weight: 700; line-height: 1.15; text-shadow: 0 2px 12px rgb(0 0 0 / .6); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .hero-title .ag-team { display: inline-flex; align-items: center; }
@@ -506,6 +506,14 @@ body.no-folders #itemsPane { display: flex; }
 .hero-dots { position: absolute; right: 20px; bottom: 18px; display: flex; gap: 6px; }
 .hero-dots i { width: 8px; height: 8px; border-radius: 50%; background: rgb(255 255 255 / .35); }
 .hero-dots i.on { background: #fff; }
+.hero-dots i { position: relative; cursor: pointer; }
+.hero-dots i::after { content: ''; position: absolute; inset: -8px -4px; }
+.hero-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 64px; display: flex; align-items: center; justify-content: center;
+  font-size: 34px; line-height: 1; color: #fff; background: rgb(0 0 0 / .35); border-radius: 10px; cursor: pointer; opacity: .75; }
+.hero-nav:hover { opacity: 1; background: rgb(0 0 0 / .55); }
+.hero-nav.prev { left: 8px; }
+.hero-nav.next { right: 8px; }
+.hcard.hero.kfocus .hero-nav { opacity: 1; }
 @media (max-width: 760px) {
   .h-hero { padding: 4px 12px; }
   .hcard.hero { height: 56vw; min-height: 200px; }
@@ -515,6 +523,7 @@ body.no-folders #itemsPane { display: flex; }
   .hero-sub { font-size: 13px; }
   .hero-go { padding: 7px 14px; font-size: 14px; }
   .hero-dots { right: 12px; bottom: 12px; }
+  .hero-nav { width: 34px; height: 48px; font-size: 26px; top: 30%; }
 }
 html.tv .hcard.hero { height: min(calc(42vh / .8), 380px); }
 .hcard:active { filter: brightness(1.25); }
@@ -576,6 +585,26 @@ html.tv .hcard.hero { height: min(calc(42vh / .8), 380px); }
 /* ---------- Menus and checklists ---------- */
 .menu-list { display: flex; flex-direction: column; gap: 6px; }
 .menu-list button { text-align: left; }
+/* Info sheet of a match / programme: picture on top, synopsis, the actions (Watch first) */
+#menuDialog.sheet .card { width: min(620px, 100vw - 24px); padding: 0 0 22px; gap: 10px; }
+#menuDialog.sheet .card > :not(.menu-art) { margin-left: 24px; margin-right: 24px; }
+#menuDialog.sheet h2 { margin-top: 14px; }
+#menuDialog.sheet .card > * { flex-shrink: 0; }
+.menu-art { position: relative; aspect-ratio: 16 / 9; flex: none; background: linear-gradient(135deg, #1c2230, #10131a); border-radius: 18px 18px 0 0; overflow: hidden; }
+.menu-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, var(--panel), transparent 40%); }
+.menu-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.menu-crests .hc-vs { gap: 40px; font-size: 32px; }
+.menu-crests .crest { width: 96px; height: 96px; }
+#menuTitle .ag-team { display: inline-flex; align-items: center; }
+#menuTitle .ag-vs { margin: 0 8px; color: var(--dim); }
+#menuSub { line-height: 1.6; margin: 0; }
+.menu-info { margin: 0; font-size: 14px; color: var(--dim); }
+.menu-desc { margin: 0; font-size: 15px; line-height: 1.5; color: #d5d8e0; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
+#menuDialog:not(.sheet) h2 { margin-top: 0; }
+@media (max-width: 760px) {
+  #menuDialog.sheet .card > :not(.menu-art) { margin-left: 16px; margin-right: 16px; }
+  .menu-crests .crest { width: 64px; height: 64px; }
+}
 .check-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 12px; }
 .check-list label.check { min-height: 48px; border-bottom: 1px solid var(--line); }
 .check-list label.check:last-child { border-bottom: 0; }

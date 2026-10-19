@@ -243,6 +243,8 @@ export function initRemote(ctx) {
       return;
     }
     if (m === 'mosaic') {
+      // Home hero: Left / Right show its other pictures
+      if ((k === 'ArrowLeft' || k === 'ArrowRight') && curTile()?.classList.contains('hero') && ctx.heroStep?.(k === 'ArrowLeft' ? -1 : 1)) return;
       if (k === 'Enter') curTile()?.click();
       else if (!moveTile(k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0, k === 'ArrowUp' ? -1 : k === 'ArrowDown' ? 1 : 0)) {
         if (k === 'ArrowLeft') { if (ctx.narrow()) ctx.showFolders(); setZone('folders'); }

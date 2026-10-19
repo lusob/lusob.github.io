@@ -6,8 +6,13 @@ Output: {updated, base, img: [pictures], ch: [{n: [names], p: [[start, minutes, 
 start = minutes since `base` (unix s); the window is 6 h back to 4 days ahead.
 picture: index in `img` (episodes of a series share theirs), each one shortened: "m<id>" Movistar+
 (the app uses its 1920×1080 still), "o<n>" Orange TV poster, "s<path>" Sincroguía, or a URL.
+
+Synopses are too big for epg.json: d/<i>.json holds those of channel i (its index in `ch`), one
+entry per programme in the same order: [synopsis, "Deportes, Fútbol · 2026 · TP"] or 0.
+
+Usage: epg.py [output folder]
 """
-import gzip, json, re, sys, time, urllib.request
+import gzip, json, os, re, sys, time, urllib.request
 from datetime import datetime
 from xml.etree import ElementTree as ET
 
@@ -35,6 +40,21 @@ def image(p):
     if m:
         return 'o' + m.group(1)
     return 's' + src[len(SINCRO):] if src.startswith(SINCRO) else src
+
+
+def text(p, tag):
+    """A tag's Spanish text without Kodi colour tags."""
+    els = p.findall(tag)
+    t = next((x.text for x in els if x.get('lang') == 'es'), None) or (els[0].text if els else '')
+    return TAGS.sub('', t or '').strip()
+
+
+def details(p):
+    """[synopsis, info] or 0."""
+    lines = [re.sub(r'^·\s*', '', l).strip() for l in text(p, 'desc').splitlines()]
+    desc = '\n'.join(l for l in lines if l and not l.startswith('País:'))
+    info = ' · '.join(re.sub(r'\s*,\s*', ', ', x.strip()) for x in text(p, 'sub-title').split('|') if x.strip())
+    return [desc, info] if desc or info else 0
 
 
 def ts(s):
@@ -70,28 +90,30 @@ def main(out):
             continue
         if b <= base or a >= end or b <= a:
             continue
-        titles = p.findall('title')
-        t = next((x.text for x in titles if x.get('lang') == 'es'), None) or (titles[0].text if titles else '')
-        t = TAGS.sub('', t or '').strip()
-        row = [(a - base) // 60, max(1, (b - a) // 60), t]
+        row = [(a - base) // 60, max(1, (b - a) // 60), text(p, 'title')]
         img = image(p)
         if img:
             if img not in img_idx:
                 img_idx[img] = len(imgs)
                 imgs.append(img)
             row.append(img_idx[img])
-        ch['p'].append(row)
-    out_ch = []
+        ch['p'].append((row, details(p)))
+    out_ch, out_d = [], []
     for cid in order:
         ch = chans[cid]
         if ch['p']:
-            ch['p'].sort()
+            ch['p'].sort(key=lambda x: x[0][:2])
+            out_d.append([d for _, d in ch['p']])
+            ch['p'] = [r for r, _ in ch['p']]
             out_ch.append(ch)
     data = {'updated': now, 'source': 'github.com/davidmuma/EPG_dobleM', 'base': base, 'img': imgs, 'ch': out_ch}
-    with open(out, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
+    os.makedirs(os.path.join(out, 'd'), exist_ok=True)
+    dump = lambda path, obj: json.dump(obj, open(os.path.join(out, path), 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
+    dump('epg.json', data)
+    for i, d in enumerate(out_d):
+        dump(f'd/{i}.json', d)
     print(f'{len(out_ch)} channels, {sum(len(c["p"]) for c in out_ch)} programmes → {out}')
 
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else 'epg.json')
+    main(sys.argv[1] if len(sys.argv) > 1 else '.')

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261018h">
+  <link rel="stylesheet" href="css/app.css?v=20261019a">
   <!-- Interface size (Ajustes): small = html.tv, big = html.big (see app.css). Automatic: TV browsers
        (big screen at a small CSS size) get the small one. -->
   <script>try { const z = localStorage.getItem('iptv-scale') || '', c = document.documentElement.classList;
@@ -14,7 +14,7 @@
     else if (z === 'l') c.add('big'); } catch {}</script>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261018h"></script>
+  <script type="module" src="js/app.js?v=20261019a"></script>
 </head>
 <body>
 
@@ -167,6 +167,7 @@
         <button type="button" id="foldersBtn">Carpetas visibles…</button>
         <button type="button" id="sportsBtn">Deportes de la agenda…</button>
         <button type="button" id="teamsBtn">Mis equipos…</button>
+        <button type="button" id="histBtn">Vaciar «Seguir viendo»</button>
       </div>
       <label>Buffer inicial
         <select id="bufferInput">
@@ -309,10 +310,14 @@
   </dialog>
 
   <!-- Actions of a match / programme -->
+  <!-- Options of a match / programme; with a picture and synopsis it is its info sheet -->
   <dialog id="menuDialog">
     <div class="card">
+      <div id="menuArt" class="menu-art" hidden></div>
       <h2 id="menuTitle"></h2>
       <p id="menuSub" class="hint"></p>
+      <p id="menuInfo" class="menu-info" hidden></p>
+      <p id="menuDesc" class="menu-desc" hidden></p>
       <div id="menuList" class="menu-list"></div>
       <div class="actions"><button id="menuClose">Cerrar</button></div>
     </div>

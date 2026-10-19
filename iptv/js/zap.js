@@ -5,8 +5,8 @@
 //   programme; nothing changes until OK.
 // - Right (with the footer shown) or 0: back to the channel watched before.
 
-import { esc, initials, VList } from './ui.js?v=20261018h';
-import { hhmm, artUrl } from './epg.js?v=20261018h';
+import { esc, initials, VList } from './ui.js?v=20261019a';
+import { hhmm, artUrl } from './epg.js?v=20261019a';
 
 const PILOT_HIDE = 6000;   // ms without keys before the footer goes away (without switching)
 const INFO_HIDE = 4000;    // footer shown briefly after every channel change

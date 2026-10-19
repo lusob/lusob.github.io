@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261018h';
+import { startEngine, resetVideo } from './engines.js?v=20261019a';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -57,7 +57,7 @@ export class Player {
     this.cuBar = root.querySelector('#pCu');
     this.token = 0;
     this.pushed = false;
-    this.eff = null;         // current adaptive buffer (s), kept across channels
+    this.eff = null;         // current adaptive buffer (s), learned per channel (see buffer())
     this.lastStall = 0;
 
     root.querySelector('#pClose').onclick = () => this.close();
@@ -386,10 +386,11 @@ export class Player {
     const base = Math.max(2, +s.buffer || 10);
     const max = Math.max(base, +s.bufferMax || 60);
     // Starts with what earlier sessions learned (frequent cuts), not from scratch every time.
-    // Live and recordings / films learn apart: their bottlenecks differ (provider vs home Wi-Fi).
-    const key = this.live ? 'bufLearned' : 'bufLearnedVod';
+    // Each live channel learns its own (the cuts usually come from that channel's server, so a bad
+    // one must not delay the others); recordings / films share one (the home Wi-Fi).
+    const key = this.live ? 'ch:' + (this.current?.id ?? '') : 'vod';
     if (this.eff == null || this.effBase !== base || this.effKey !== key) {
-      this.eff = Math.max(base, Math.min(max, +s[key] || 0));
+      this.eff = Math.max(base, Math.min(max, +(s.bufLearnedBy || {})[key] || 0));
       this.effBase = base;
       this.effKey = key;
     }
@@ -451,7 +452,11 @@ export class Player {
   }
 
   learn() {
-    this.getSettings()[this.effKey] = this.eff;
+    const s = this.getSettings();
+    // Only the channels that needed more than the setting, the last 60 of them
+    const by = Object.entries(s.bufLearnedBy || {}).filter(([k]) => k !== this.effKey);
+    if (this.eff > this.effBase) by.push([this.effKey, this.eff]);
+    s.bufLearnedBy = Object.fromEntries(by.slice(-60));
     this.saveSettings?.();
   }
 

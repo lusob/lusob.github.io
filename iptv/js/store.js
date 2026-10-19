@@ -11,12 +11,18 @@ export function get(key, fallback = null) {
   }
 }
 
-export function set(key, value) {
+// Called with the key after every change made by the app (see sync.js); quiet = from the sync itself.
+let onChange = null;
+export const watch = fn => { onChange = fn; };
+
+export function set(key, value, quiet = false) {
   try { localStorage.setItem(PREFIX + key, JSON.stringify(value)); } catch {}
+  if (!quiet) onChange?.(key);
 }
 
-export function del(key) {
+export function del(key, quiet = false) {
   try { localStorage.removeItem(PREFIX + key); } catch {}
+  if (!quiet) onChange?.(key);
 }
 
 let dbPromise;
