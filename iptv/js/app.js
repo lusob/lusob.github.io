@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261019a';
-import * as store from './store.js?v=20261019a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261019a';
-import { Player } from './player.js?v=20261019a';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261019a';
-import { Grid } from './grid.js?v=20261019a';
-import { Mosaic } from './mosaic.js?v=20261019a';
-import { initRemote } from './remote.js?v=20261019a';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261019a';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261019a';
-import { Zapper } from './zap.js?v=20261019a';
-import { initTouch } from './touch.js?v=20261019a';
-import { initSync } from './sync.js?v=20261019a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261019b';
+import * as store from './store.js?v=20261019b';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261019b';
+import { Player } from './player.js?v=20261019b';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261019b';
+import { Grid } from './grid.js?v=20261019b';
+import { Mosaic } from './mosaic.js?v=20261019b';
+import { initRemote } from './remote.js?v=20261019b';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261019b';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261019b';
+import { Zapper } from './zap.js?v=20261019b';
+import { initTouch } from './touch.js?v=20261019b';
+import { initSync } from './sync.js?v=20261019b';
 
-const VERSION = '2026-10-19a';
+const VERSION = '2026-10-19b';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -890,16 +890,23 @@ function eventMenu(e) {
 }
 
 function progMenu(ch, p) {
-  const now = Date.now() / 1000, entries = [{ label: `▶ Ver ${ch.name} ahora`, main: true, fn: () => confirmBusy().then(ok => { if (ok) openLive([ch], 0, ch.name, null); }) }];
+  // On now: watch first; later: record / remind first, the channel's current programme further down
+  const now = Date.now() / 1000, on = p.start <= now, entries = [];
+  const watch = { label: on ? `▶ Ver ${ch.name}` : `▶ Ver ${ch.name} ahora (lo que echan ya)`, fn: () => confirmBusy().then(ok => { if (ok) openLive([ch], 0, ch.name, null); }) };
+  if (on) entries.push(watch);
   if (recorder) {
     const r = recList().find(x => x.ch === ch.id && x.prog === p.start);
     entries.push(r ? { label: '⏺ Grabación programada: cambiar o borrar', fn: () => editRec(r) }
       : { label: '⏺ Grabar en la Raspberry Pi', fn: () => saveRec({ ch: ch.id, title: p.title, prog: p.start, start: Math.max(now, p.start - PAD_START), end: p.end + PAD_END, backups: backupIds(ch.id) }, true).then(() => grid.refresh()) });
   }
-  const r = reminderAt(ch.id, p.start);
-  entries.push(r ? { label: '🔕 Quitar el aviso', fn: () => removeReminder(r.id) }
-    : { label: '🔔 Avisarme cuando empiece', fn: () => addReminder({ t: p.start, title: p.title, sub: ch.name, ch: ch.id }) });
+  if (!on) {
+    const r = reminderAt(ch.id, p.start);
+    entries.push(r ? { label: '🔕 Quitar el aviso', fn: () => removeReminder(r.id) }
+      : { label: '🔔 Avisarme cuando empiece', fn: () => addReminder({ t: p.start, title: p.title, sub: ch.name, ch: ch.id }) });
+    entries.push(watch);
+  }
   entries.push({ label: '≡ Guía completa del canal', fn: () => openGuide(ch, p.start) });
+  entries[0].main = true;
   showMenu(p.title || 'Sin título', `${esc(ch.name)} · ${esc(dayLabel(p.start))} ${hhmm(p.start)}–${hhmm(p.end)}`, entries, { img: p.img, prog: p });
 }
 

@@ -4,7 +4,7 @@
 //  3. get_short_epg per channel, fetched lazily for what is on screen
 //     (few concurrent requests, newest request wins, cached until the current programme ends).
 
-import { channelKey, isForeign } from './backups.js?v=20261019a';
+import { channelKey, isForeign } from './backups.js?v=20261019b';
 
 const CONCURRENCY = 3;
 // Daily by .github/workflows/epg.yml in lusob.github.io (tools/epg.py), on a branch of its own.
@@ -14,6 +14,9 @@ const EMPTY_TTL = 30 * 60e3;
 // A match in a guide: "Granada CF - Cádiz CF", "Celtics @ Pistons", "Lakers vs. Suns", "Betis v Celta"…
 const VERSUS = / (-|–|@|vs\.?|v|x) /i;
 export const MATCH_EARLY = 45 * 60;
+// …but not trailers, summaries or goals
+const NOT_MATCH = / (proximo|resumen|resumenes|previa|highlights|mejores|goles|jugadas) /;
+const WOMEN = /femenin|women|\bfem\b|\bf\.? /;
 
 // Programme pictures of epg.json, shortened by tools/epg.py: "m<id>" Movistar+ (its 1920×1080
 // still), "o<n>" Orange TV poster, "s<path>" Sincroguía, or a URL.
@@ -106,10 +109,8 @@ export class Epg {
     return (!isForeign(name) && this.pub?.get(k)) || this.prov?.get(k) || null;
   }
 
-  // Guides that broadcast the match home–away starting at about t (both teams in the title; the
-  // broadcast may start up to MATCH_EARLY before, with the build-up):
-  // [programme list], the agenda's own channel names being often vague ("LaLiga TV M2").
-  matchAt(t, home, away) {
+  // Programmes of the match home–away in the guides (both teams in the title): [{ start, list, p }].
+  matches(home, away) {
     if (!this.pub) return [];
     if (!this.matchIdx) {
       // Programmes that look like a match ("Granada CF - Cádiz CF"), not trailers or summaries.
@@ -117,7 +118,9 @@ export class Epg {
       for (const map of [this.pub, this.prov || new Map()]) {
         for (const list of new Set(map.values())) {
           for (const p of list) {
-            if (VERSUS.test(p.title) && !/pr[oó]ximo|resumen|previa|highlights|mejores/i.test(p.title)) this.matchIdx.push({ start: p.start, k: ' ' + norm(p.title).replace(/[^a-z0-9]+/g, ' ') + ' ', list });
+            if (!VERSUS.test(p.title)) continue;
+            const k = ' ' + norm(p.title).replace(/[^a-z0-9]+/g, ' ') + ' ';
+            if (!NOT_MATCH.test(k)) this.matchIdx.push({ start: p.start, k, list, p });
           }
         }
       }
@@ -125,7 +128,16 @@ export class Epg {
     const ha = teamWords(home), aw = teamWords(away);
     if (!ha.length || !aw.length) return [];
     const has = (k, ws) => ws.some(w => k.includes(` ${w} `));
-    return [...new Set(this.matchIdx.filter(m => Math.abs(m.start - t) <= MATCH_EARLY && has(m.k, ha) && has(m.k, aw)).map(m => m.list))];
+    // Women's match only with a women's programme, and the other way round
+    const fem = WOMEN.test(' ' + norm(home + ' ' + away) + ' ');
+    return this.matchIdx.filter(m => has(m.k, ha) && has(m.k, aw) && WOMEN.test(m.k) === fem);
+  }
+
+  // Guides that broadcast the match live, starting at about t (the broadcast may start up to
+  // MATCH_EARLY before, with the build-up): [programme list], the agenda's own channel names
+  // being often vague ("LaLiga TV M2").
+  matchAt(t, home, away) {
+    return [...new Set(this.matches(home, away).filter(m => Math.abs(m.start - t) <= MATCH_EARLY).map(m => m.list))];
   }
 
   // Programmes on now or later whose title contains q (already normalised), one channel per

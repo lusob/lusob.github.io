@@ -306,6 +306,14 @@ body.in-series #back { display: inline-block; }
 .pl-next { margin-top: 4px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #pilot .bar { max-width: 520px; }
 .pl-keys { flex: none; font-size: 13px; }
+/* «+ info»: genre line and synopsis of the programme on now */
+.pl-info-btn { flex: none; min-height: 40px; padding: 0 14px; border-radius: 10px; font-size: 15px; font-weight: 600; background: rgb(255 255 255 / .14); border: 1px solid rgb(255 255 255 / .25); color: #fff; }
+#pilot.more { align-items: flex-start; }
+.pl-more { margin-top: 10px; max-width: 900px; }
+.pl-info { font-size: 14px; margin-bottom: 4px; }
+.pl-desc { font-size: 16px; line-height: 1.45; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+#pilot.more .grow { min-width: 0; }
+@media (max-width: 760px) { .pl-desc { font-size: 14px; -webkit-line-clamp: 8; } .pl-info-btn { padding: 0 10px; } }
 @media (max-width: 760px), (pointer: coarse) { .pl-keys { display: none; } }
 
 /* Guide */

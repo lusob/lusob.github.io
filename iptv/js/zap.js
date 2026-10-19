@@ -4,12 +4,15 @@
 // - Up / Down ("pilot") browses the neighbouring channels in a translucent footer with their
 //   programme; nothing changes until OK.
 // - Right (with the footer shown) or 0: back to the channel watched before.
+// - «+ info» (OK on the channel being watched, the Info key or a tap on the button): the footer
+//   grows with the programme's genre line and synopsis (public guide).
 
-import { esc, initials, VList } from './ui.js?v=20261019a';
-import { hhmm, artUrl } from './epg.js?v=20261019a';
+import { esc, initials, VList } from './ui.js?v=20261019b';
+import { hhmm, artUrl } from './epg.js?v=20261019b';
 
 const PILOT_HIDE = 6000;   // ms without keys before the footer goes away (without switching)
 const INFO_HIDE = 4000;    // footer shown briefly after every channel change
+const MORE_HIDE = 30000;   // footer with «+ info» open
 
 export class Zapper {
   // ctx: { player, epg() → Epg | null, enabled() → bool, folders() → [{ id, name, count }],
@@ -29,7 +32,11 @@ export class Zapper {
     root.querySelector('#zClose').onclick = () => this.close();
     this.side.addEventListener('click', e => e.stopPropagation());
     root.addEventListener('click', () => this.close());
-    this.pilotEl.addEventListener('click', e => { e.stopPropagation(); this.go(); });
+    this.pilotEl.addEventListener('click', e => {
+      e.stopPropagation();
+      if (e.target.closest('[data-info]') || (this.pIdx === this.ctx.player.index && !this.more)) this.toggleMore();
+      else this.go();
+    });
   }
 
   get isOpen() { return !this.side.hidden; }
@@ -130,6 +137,7 @@ export class Zapper {
   showPilot(i, ms) {
     const it = this.ctx.player.queue?.[i];
     if (!it) return;
+    if (i !== this.pIdx) this.more = false;
     this.pIdx = i;
     this.ctx.epg()?.want([it.id], true);
     this.drawPilot();
@@ -153,13 +161,43 @@ export class Zapper {
         ${e?.now ? `<div class="pl-epg"><b>${hhmm(e.now.start)}–${hhmm(e.now.end)}</b> ${esc(e.now.title)}</div>
           <div class="bar"><i style="width:${Math.round(e.progress * 100)}%"></i></div>` : `<div class="pl-epg dim">${e ? 'Sin información de programación' : 'Cargando programación…'}</div>`}
         ${e?.next ? `<div class="pl-next dim">Después <b>${hhmm(e.next.start)}</b> ${esc(e.next.title)}</div>` : ''}
+        ${this.more ? this.moreHtml(it, e?.now) : ''}
       </div>
-      <div class="pl-keys dim">▲▼ canales · OK ver · ◀ lista${this.ctx.lastName?.() ? `<br>▶ volver a ${esc(this.ctx.lastName())}` : ''}</div>`;
+      ${e?.now ? `<button type="button" class="pl-info-btn" data-info>${this.more ? '− info' : '+ info'}</button>` : ''}
+      <div class="pl-keys dim">▲▼ canales · OK ${here ? (this.more ? 'cerrar info' : '+ info') : 'ver'} · ◀ lista${this.ctx.lastName?.() ? `<br>▶ volver a ${esc(this.ctx.lastName())}` : ''}</div>`;
+    this.pilotEl.classList.toggle('more', !!this.more);
+  }
+
+  // Genre line and synopsis of the programme on now (fetched once per programme).
+  moreHtml(it, prog) {
+    if (!prog) return '<div class="pl-more dim">Sin información de programación</div>';
+    const key = it.id + '|' + prog.start;
+    const d = this.details?.key === key ? this.details : null;
+    if (!d) {
+      this.details = { key };
+      const epg = this.ctx.epg();
+      Promise.resolve(epg?.details ? epg.details(prog) : { desc: prog.desc || '', info: '' }).then(r => {
+        if (this.details?.key !== key) return;
+        this.details = { key, ...r, done: true };
+        if (this.pilotOn && this.more) this.drawPilot();
+      });
+    }
+    if (!d?.done) return '<div class="pl-more dim">Cargando la ficha…</div>';
+    if (!d.desc && !d.info) return '<div class="pl-more dim">La guía no trae más detalles de este programa</div>';
+    return `<div class="pl-more">${d.info ? `<div class="pl-info dim">${esc(d.info)}</div>` : ''}${d.desc ? `<div class="pl-desc">${esc(d.desc)}</div>` : ''}</div>`;
+  }
+
+  toggleMore() {
+    this.more = !this.more;
+    this.drawPilot();
+    clearTimeout(this.pilotTimer);
+    this.pilotTimer = setTimeout(() => this.hidePilot(), this.more ? MORE_HIDE : PILOT_HIDE);
   }
 
   hidePilot() {
     clearTimeout(this.pilotTimer);
     this.pilotEl.hidden = true;
+    this.more = false;
   }
 
   go() {
@@ -203,11 +241,16 @@ export class Zapper {
       return true;
     }
     if (!this.ctx.enabled()) return false;
+    if (k === 'Info' || k === 'i' || k === 'ContextMenu') {
+      if (!this.pilotOn) this.showPilot(this.ctx.player.index, PILOT_HIDE);
+      this.toggleMore();
+      return true;
+    }
     if (k === 'ArrowUp' || k === 'ArrowDown') { this.pilot(k === 'ArrowUp' ? -1 : 1); return true; }
     if (k === '0' && this.ctx.lastName?.()) { this.hidePilot(); this.ctx.goLast(); return true; }
     if (k === 'ArrowLeft') { this.openChans(); return true; }
     if (this.pilotOn) {
-      if (k === 'Enter') { this.go(); return true; }
+      if (k === 'Enter') { if (this.pIdx === this.ctx.player.index) this.toggleMore(); else this.go(); return true; }
       if (k === 'ArrowRight' && this.ctx.lastName?.()) { this.hidePilot(); this.ctx.goLast(); return true; }
       if (isBack || k === 'ArrowRight') { this.hidePilot(); return isBack; }
       return false;
