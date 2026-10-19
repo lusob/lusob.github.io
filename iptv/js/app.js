@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261019c';
-import * as store from './store.js?v=20261019c';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261019c';
-import { Player } from './player.js?v=20261019c';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261019c';
-import { Grid } from './grid.js?v=20261019c';
-import { Mosaic } from './mosaic.js?v=20261019c';
-import { initRemote } from './remote.js?v=20261019c';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261019c';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261019c';
-import { Zapper } from './zap.js?v=20261019c';
-import { initTouch } from './touch.js?v=20261019c';
-import { initSync } from './sync.js?v=20261019c';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261019d';
+import * as store from './store.js?v=20261019d';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261019d';
+import { Player } from './player.js?v=20261019d';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261019d';
+import { Grid } from './grid.js?v=20261019d';
+import { Mosaic } from './mosaic.js?v=20261019d';
+import { initRemote } from './remote.js?v=20261019d';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261019d';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261019d';
+import { Zapper } from './zap.js?v=20261019d';
+import { initTouch } from './touch.js?v=20261019d';
+import { initSync } from './sync.js?v=20261019d';
 
-const VERSION = '2026-10-19c';
+const VERSION = '2026-10-19d';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -1052,7 +1052,8 @@ function eventProg(e) {
 // Picture of a recording: its programme in the channel's guide.
 function recProg(r) {
   const ch = liveById(r.ch), l = ch && epg?.byName(ch.name);
-  return l?.find(p => r.prog ? p.start === r.prog : p.start <= r.start + 600 && p.end > r.start + 600) || null;
+  const mid = (r.prog || r.start) + 600;   // a match recording: r.prog is the match's start, not the programme's
+  return l?.find(p => p.start === r.prog) || l?.find(p => p.start <= mid && p.end > mid) || null;
 }
 
 const bigCrests = e => `<span class="hc-vs">${crest(e.hi)}<b>–</b>${crest(e.ai)}</span>`;
@@ -1080,7 +1081,7 @@ function eventCard(e, key) {
 
 function recCard(r, key, pos) {
   const dur = r.duration || 0, img = recProg(r)?.img;
-  return card(key, () => onRecClick({ ...r, rec: true }, null, pos), 'rec' + (r.state === 'recording' ? ' on-air' : ''), `<span class="hc-art${img ? '' : ' plain'}">${img ? artImg(img, 480, 270) : '<span class="hc-sport">⏺</span>'}</span><span class="hc-body">
+  return card(key, () => recMenu(r, pos), 'rec' + (r.state === 'recording' ? ' on-air' : ''), `<span class="hc-art${img ? '' : ' plain'}">${img ? artImg(img, 480, 270) : '<span class="hc-sport">⏺</span>'}</span><span class="hc-body">
       <span class="hc-tag">${r.state === 'recording' ? '● Grabando' : '⏺ Grabación'}${pos ? ` · seguir en ${fmtClock(pos)}` : ''}${r.gaps?.length ? ` · <span class="cuts">⚠ ${r.gaps.length === 1 ? '1 corte' : `${r.gaps.length} cortes`}</span>` : ''}</span>
       <span class="hc-name">${esc(r.title || 'Sin título')}</span>
       <span class="hc-sub dim">${esc(piStatus(r))}</span>
@@ -1553,7 +1554,7 @@ function showRecent() {
 
 function folderName(it, tab = ui.tab) {
   for (const c of it.cats) {
-    const f = data[tab].folderById.get(c);
+    const f = data[tab]?.folderById.get(c);
     if (f) return f.name;
   }
   return '';
@@ -1584,7 +1585,7 @@ function renderItemRow(it) {
   if (it.ev) return eventRow(it, eventChannels(it), !String(ui.folder.agenda || '').startsWith(AG_DAY) || !!query, eventMark(it));
   const k = it._k || ui.tab;
   const showFolder = query || (ui.folder[ui.tab] || ALL) === FAV || ui.folder[ui.tab] === ALL;
-  const meta = [!it.versions && showFolder && folderName(it), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
+  const meta = [!it.versions && showFolder && folderName(it, k), !it.noDate && ago(it.added), it.rating && `★ ${it.rating}`].filter(Boolean).map(esc).join(' · ');
   let sub = `<div class="meta">${meta}</div>`;
   // Football list: shortcuts to the original channels, always say which folder each one is in.
   const from = it.versions ? ` <span class="from">· 📁 ${esc(folderName(it))}${it.versions > 1 ? ` · ${it.versions} versiones` : ''}</span>` : '';
@@ -1626,12 +1627,12 @@ function onItemClick(it, i, act) {
   if (it.sec) return;
   if (it.more) { expanded.add(it.more); return refreshItems(false); }
   if (query) pushRecent(query);
-  if (it.rec) return onRecClick(it, act);
+  if (it.rec) return act ? onRecClick(it, act) : recMenu(it);
   if (it.ev) return !act || act === 'menu' ? eventMenu(it) : playEvent(it, act);
   // A programme from the search: on now → watch its channel; later → its guide (to record it).
   if (it.prog) {
-    if (act === 'guide' || it.prog.start > Date.now() / 1000) return openGuide(it.base, it.prog.start);
-    return confirmBusy().then(ok => { if (ok) openLive([it.base], 0, it.prog.title, null); });
+    if (act === 'guide') return openGuide(it.base, it.prog.start);
+    return progMenu(it.base, it.prog);
   }
   if (act === 'guide') return openGuide(it);
   if (act === 'up' || act === 'down') return moveFav(it, act === 'up' ? -1 : 1);
@@ -2052,6 +2053,22 @@ function renderRecRow(r) {
       <div class="meta">${esc(recStatus(r))} · ${esc(chName)}${bk}</div></div>
     <button class="star gbtn" data-act="edit" aria-label="Editar">✎</button>
   </div>`;
+}
+
+// The info sheet of a recording: its programme's picture and synopsis, Watch first.
+function recMenu(r, pos) {
+  const saved = recList().find(x => x.id === r.id);
+  if (!saved) return;
+  pos ??= hist.find(h => h.k === 'rec' && h.id === saved.id)?.pos;
+  const ready = !saved.pi || saved.duration > 0 || saved.state === 'recording', entries = [];
+  if (ready && pos) entries.push({ label: `▶ Seguir viendo (desde ${fmtClock(pos)})`, fn: () => onRecClick(saved, null, pos) });
+  if (ready) entries.push({ label: pos ? '⏮ Ver desde el principio' : saved.state === 'recording' ? '▶ Ver (desde el principio)' : '▶ Ver', fn: () => onRecClick(saved, null, 0) });
+  entries.push({ label: saved.state === 'scheduled' || (!saved.pi && Date.now() / 1000 < saved.end) ? '✎ Cambiar o borrar la grabación' : '✎ Editar o borrar', fn: () => editRec(saved) });
+  entries[0].main = true;
+  const chName = liveById(saved.ch)?.name || saved.chName || '';
+  const p = recProg(saved);
+  showMenu(saved.title || 'Sin título', `⏺ ${esc(recStatus(saved))}${chName ? `<br>📺 ${esc(chName)}` : ''}`, entries,
+    { img: p?.img, prog: p });
 }
 
 function onRecClick(r, act, pos = null) {
