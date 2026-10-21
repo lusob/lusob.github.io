@@ -2,8 +2,8 @@
 // before now), a red line at the current time. A programme on now plays its channel; a later one
 // opens its options (record, remind…). The corner button scrolls back to now.
 
-import { esc, initials } from './ui.js?v=20261019e';
-import { hhmm } from './epg.js?v=20261019e';
+import { esc, initials } from './ui.js?v=20261021a';
+import { hhmm } from './epg.js?v=20261021a';
 
 const PX = 4;               // px per minute (240 px per hour)
 const SPAN = 12 * 60;       // minutes shown
