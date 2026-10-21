@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261021a';
-import * as store from './store.js?v=20261021a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261021a';
-import { Player } from './player.js?v=20261021a';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261021a';
-import { Grid } from './grid.js?v=20261021a';
-import { Mosaic } from './mosaic.js?v=20261021a';
-import { initRemote } from './remote.js?v=20261021a';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261021a';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261021a';
-import { Zapper } from './zap.js?v=20261021a';
-import { initTouch } from './touch.js?v=20261021a';
-import { initSync } from './sync.js?v=20261021a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261021b';
+import * as store from './store.js?v=20261021b';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261021b';
+import { Player } from './player.js?v=20261021b';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261021b';
+import { Grid } from './grid.js?v=20261021b';
+import { Mosaic } from './mosaic.js?v=20261021b';
+import { initRemote } from './remote.js?v=20261021b';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261021b';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261021b';
+import { Zapper } from './zap.js?v=20261021b';
+import { initTouch } from './touch.js?v=20261021b';
+import { initSync } from './sync.js?v=20261021b';
 
-const VERSION = '2026-10-21a';
+const VERSION = '2026-10-21b';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -43,6 +43,7 @@ if (!settings.v3) { settings.fit = 'contain'; settings.v3 = true; }   // zoom cu
 ui.hideDead ??= false;
 
 const player = new Player($('#player'), () => settings);
+player.guard = () => confirmBusy();   // changing channel while the Pi records
 player.saveSettings = () => store.set('settings', settings);
 delete settings.bufLearned;      // one learned buffer for every channel (before 2026-10-19)
 delete settings.bufLearnedVod;
@@ -2228,12 +2229,20 @@ setInterval(() => {
   store.set('hist:' + account, hist);
 }, 10000);
 
-async function stopPiRec(r) {
+// wait: until the Pi has let go of the connection (up to ~10 s), to use it right after.
+async function stopPiRec(r, wait = false) {
   try {
     await piApi('POST', `recs/${r.id}/stop`);
-    toast('Grabación detenida', 2500);
-    setTimeout(loadPiRecs, 1500);
-  } catch (ex) { toast(ex.message); }
+  } catch (ex) { toast(ex.message); return false; }
+  toast('Grabación detenida', 2500);
+  if (!wait) { setTimeout(loadPiRecs, 1500); return true; }
+  for (let i = 0; i < 20; i++) {
+    await new Promise(res => setTimeout(res, 500));
+    await loadPiRecs();
+    if (piRecs.find(x => x.id === r.id)?.state !== 'recording') break;
+  }
+  await new Promise(res => setTimeout(res, 1000));   // the provider takes a moment to free the slot
+  return true;
 }
 
 // Always visible while the Pi records: the single connection is taken until it ends.
@@ -2251,11 +2260,16 @@ function confirmBusy() {
   if (!r) return Promise.resolve(true);
   return new Promise(resolve => {
     const dlg = $('#busyDialog');
-    $('#busyText').textContent = `La Raspberry Pi está grabando «${r.title}» hasta las ${hhmm(r.end)}. Tu cuenta solo permite una conexión: si abres otro canal, la grabación se cortará (o se cortará lo que veas).`;
+    $('#busyText').textContent = `La Raspberry Pi está grabando «${r.title}» hasta las ${hhmm(r.end)}. Tu cuenta solo permite una conexión: para ver este canal se detendrá la grabación (lo grabado hasta ahora se conserva).`;
     dlg.returnValue = '';
-    dlg.onclose = () => {
-      if (dlg.returnValue === 'rec') { playPiRec(r); resolve(false); }
-      else resolve(dlg.returnValue === 'anyway');
+    dlg.onclose = async () => {
+      const v = dlg.returnValue;
+      if (v === 'rec') { playPiRec(r); return resolve(false); }
+      if (v !== 'stop') return resolve(false);
+      loading('Deteniendo la grabación…');
+      const ok = await stopPiRec(r, true);
+      loading('');
+      resolve(ok);
     };
     dlg.showModal();
   });

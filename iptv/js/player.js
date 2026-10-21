@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261021a';
+import { startEngine, resetVideo } from './engines.js?v=20261021b';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -172,9 +172,12 @@ export class Player {
     this.zoomBtn.textContent = f[1];
   }
 
-  step(d) {
+  // guard: () => Promise<bool>, asked before changing channel (the app: the Pi may be recording)
+  async step(d) {
     const i = this.index + d;
     if (!this.queue || i < 0 || i >= this.queue.length) return;
+    if (this.guard && !(await this.guard())) return;
+    if (!this.isOpen || this.index + d !== i) return;
     this.index = i;
     this.load();
   }
