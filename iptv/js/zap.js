@@ -152,12 +152,15 @@ export class Zapper {
     const e = this.ctx.epg()?.get(it.id);
     const here = this.pIdx === p.index;
     const img = e?.now?.img;
+    // Playing one of the channel's backups: say which one
+    const bk = here && p.src > 0 && !p.cu ? p.sources?.[p.src]?.name : '';
     this.pilotEl.innerHTML = `
       ${img ? `<div class="pl-art"><img src="${esc(artUrl(img, 320, 180))}" alt="" onerror="this.parentNode.remove()"></div>` : ''}
       <div class="logo">${initials(it.name)}${it.icon ? `<img src="${esc(it.icon)}" alt="" onerror="this.remove()">` : ''}</div>
       <div class="grow">
         <div class="pl-name"><span class="z-num">${this.pIdx + 1}</span> ${esc(it.name)}
           <span class="pl-tag${here ? ' here' : ''}">${here ? '● Viendo' : 'OK para ver'}</span></div>
+        ${bk ? `<div class="pl-bk">⇄ Por respaldo: ${esc(bk)}</div>` : ''}
         ${e?.now ? `<div class="pl-epg"><b>${hhmm(e.now.start)}–${hhmm(e.now.end)}</b> ${esc(e.now.title)}</div>
           <div class="bar"><i style="width:${Math.round(e.progress * 100)}%"></i></div>` : `<div class="pl-epg dim">${e ? 'Sin información de programación' : 'Cargando programación…'}</div>`}
         ${e?.next ? `<div class="pl-next dim">Después <b>${hhmm(e.next.start)}</b> ${esc(e.next.title)}</div>` : ''}

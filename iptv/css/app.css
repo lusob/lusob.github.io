@@ -303,6 +303,7 @@ body.in-series #back { display: inline-block; }
 .pl-name .z-num { font-size: 18px; margin-right: 6px; }
 .pl-tag { margin-left: 10px; font-size: 13px; font-weight: 600; color: var(--accent); vertical-align: middle; }
 .pl-tag.here { color: #ff6b6b; }
+.pl-bk { margin-top: 2px; font-size: 13px; font-weight: 600; color: #ffb454; }
 .pl-epg { margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-epg b, .pl-next b { color: var(--accent); font-weight: 600; }
 .pl-next { margin-top: 4px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

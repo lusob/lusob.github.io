@@ -1051,7 +1051,7 @@ function eventProg(e) {
 
 // Picture of a recording: its programme in the channel's guide.
 function recProg(r) {
-  const ch = liveById(r.ch), l = ch && epg?.byName(ch.name);
+  const ch = [r.ch, ...(r.backups || [])].map(liveById).find(Boolean), l = ch && epg?.byName(ch.name || r.chName);
   const mid = (r.prog || r.start) + 600;   // a match recording: r.prog is the match's start, not the programme's
   return l?.find(p => p.start === r.prog) || l?.find(p => p.start <= mid && p.end > mid) || null;
 }
@@ -2050,7 +2050,7 @@ function renderRecRow(r) {
   return `<div class="row rec${r.state === 'recording' ? ' on-air' : ''}">
     <div class="logo">⏺</div>
     <div class="grow"><div class="name">${esc(r.title || 'Sin título')}</div>
-      <div class="meta">${esc(recStatus(r))} · ${esc(chName)}${bk}</div></div>
+      <div class="meta">${esc(recStatus(r))}${r.current ? '' : ` · ${esc(chName)}${bk}`}</div></div>
     <button class="star gbtn" data-act="edit" aria-label="Editar">✎</button>
   </div>`;
 }
@@ -2289,8 +2289,8 @@ function piStatus(r) {
 let plan = null;   // { mode: 'rec' | 'backup', rec?, ch, picked: [ids] }
 
 function editRec(r, isNew = false) {
-  const ch = liveById(r.ch);
-  if (!ch) return;
+  // The channel may have left the list (renumbered by the provider): the recording can still be edited or deleted
+  const ch = liveById(r.ch) || { id: String(r.ch), name: r.chName || 'un canal que ya no está en tu lista' };
   plan = { mode: 'rec', rec: r, ch, picked: [...r.backups], isNew };
   $('#planTitle').textContent = isNew ? `Programar en ${ch.name}` : `Grabación en ${ch.name}`;
   $('#planHint').textContent = recorder
