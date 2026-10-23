@@ -3,7 +3,7 @@
 // assignments, recent searches and a few settings. Each key: last change wins. The first time a
 // screen connects its data is merged with the Pi's (lists joined) instead of being replaced.
 
-import * as store from './store.js?v=20261021b';
+import * as store from './store.js?v=20261023a';
 
 const SHARED = /^(fav|bk|hideF|remind|hist|alias|autoRec|rec):|^(teams|recentQ|settings)$/;
 // Settings that follow the user; the rest (buffer, picture fit, full screen…) belong to each screen.

@@ -4,7 +4,7 @@
 //  3. get_short_epg per channel, fetched lazily for what is on screen
 //     (few concurrent requests, newest request wins, cached until the current programme ends).
 
-import { channelKey, isForeign } from './backups.js?v=20261021b';
+import { channelKey, isForeign } from './backups.js?v=20261023a';
 
 const CONCURRENCY = 3;
 // Daily by .github/workflows/epg.yml in lusob.github.io (tools/epg.py), on a branch of its own.

@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261021b';
-import * as store from './store.js?v=20261021b';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261021b';
-import { Player } from './player.js?v=20261021b';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261021b';
-import { Grid } from './grid.js?v=20261021b';
-import { Mosaic } from './mosaic.js?v=20261021b';
-import { initRemote } from './remote.js?v=20261021b';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261021b';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261021b';
-import { Zapper } from './zap.js?v=20261021b';
-import { initTouch } from './touch.js?v=20261021b';
-import { initSync } from './sync.js?v=20261021b';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261023a';
+import * as store from './store.js?v=20261023a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261023a';
+import { Player } from './player.js?v=20261023a';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261023a';
+import { Grid } from './grid.js?v=20261023a';
+import { Mosaic } from './mosaic.js?v=20261023a';
+import { initRemote } from './remote.js?v=20261023a';
+import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261023a';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261023a';
+import { Zapper } from './zap.js?v=20261023a';
+import { initTouch } from './touch.js?v=20261023a';
+import { initSync } from './sync.js?v=20261023a';
 
-const VERSION = '2026-10-21b';
+const VERSION = '2026-10-23a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -2640,7 +2640,7 @@ $('#settingsBtn').addEventListener('click', () => {
   }
   lines.push(syncer ? (syncer.status.ok ? '🔄 Sincronizado con la Raspberry: favoritos, equipos, avisos y «Seguir viendo» son los mismos en todas las pantallas que la abren desde su dirección'
     : `🔄 Sin sincronizar con la Raspberry${syncer.status.error ? ` (${esc(syncer.status.error)})` : ''}`)
-    : '<span class="dim">Para compartir favoritos, equipos y «Seguir viendo» entre pantallas, abre la app desde la Raspberry (http://192.168.1.146:8090) en casa</span>');
+    : '<span class="dim">Para compartir favoritos, equipos y «Seguir viendo» entre pantallas, abre la app desde el grabador de Raspberry Pi (http://&lt;ip-de-la-pi&gt;:8090; ver las instrucciones)</span>');
   lines.push(`<span class="dim">Versión de la app: ${VERSION}</span>`);
   $('#accountInfo').innerHTML = lines.join('<br>');
   $('#diagOut').hidden = true;
