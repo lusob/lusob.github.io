@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261023a';
-import * as store from './store.js?v=20261023a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261023a';
-import { Player } from './player.js?v=20261023a';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261023a';
-import { Grid } from './grid.js?v=20261023a';
-import { Mosaic } from './mosaic.js?v=20261023a';
-import { initRemote } from './remote.js?v=20261023a';
-import { autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261023a';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261023a';
-import { Zapper } from './zap.js?v=20261023a';
-import { initTouch } from './touch.js?v=20261023a';
-import { initSync } from './sync.js?v=20261023a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261026a';
+import * as store from './store.js?v=20261026a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261026a';
+import { Player } from './player.js?v=20261026a';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261026a';
+import { Grid } from './grid.js?v=20261026a';
+import { Mosaic } from './mosaic.js?v=20261026a';
+import { initRemote } from './remote.js?v=20261026a';
+import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261026a';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261026a';
+import { Zapper } from './zap.js?v=20261026a';
+import { initTouch } from './touch.js?v=20261026a';
+import { initSync } from './sync.js?v=20261026a';
 
-const VERSION = '2026-10-23a';
+const VERSION = '2026-10-26a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -992,8 +992,47 @@ function playEvent(e, act) {
   if (!c) return toast('Ninguno de sus canales está en tu lista', 3000);
   // The queue: every playable channel of the event (Up / Down switches between them)
   const items = chans.map(x => x.item);
-  confirmBusy().then(ok => { if (ok) openLive(items, Math.max(0, items.indexOf(c.item)), eventName(e), null); });
+  confirmBusy().then(ok => { if (!ok) return; openLive(items, Math.max(0, items.indexOf(c.item)), eventName(e), null); liveEvent = e; });
 }
+
+// Every version of a live channel failed. Providers renumber or rename channels now and then,
+// often right before big events: download the list again (at most every 10 min) and, if the
+// channel, its backups or the event's channels changed, try again with the new ones.
+let liveEvent = null;     // the event being watched (playEvent), its channels are looked up again
+let listCheckedAt = 0;
+player.onGiveUp = async () => {
+  if (playerKind !== 'live' || !api || Date.now() - listCheckedAt < 10 * 60e3) return;
+  listCheckedAt = Date.now();
+  const cur = player.current, ev = liveEvent;
+  const before = new Set([...player.queue.map(x => x.id), ...player.sources.map(s => s.id)]);
+  const failMsg = player.msgEl.textContent;
+  player.msg('No ha funcionado ninguna versión del canal. Comprobando si el proveedor ha cambiado su lista de canales…');
+  player.failEl.hidden = true;
+  await ensureData('live', true);
+  if (!player.isOpen || player.current !== cur) return;
+  eventChanCache.clear();
+  shownCache = null;
+  if (ui.tab === 'live' && !query) { renderFolders(); refreshItems(false); }
+  // The same channel by number, or else by name (renumbered); the event: its channels again
+  const key = channelKey(cur.name);
+  const fresh = liveById(cur.id) || (key && data.live.items.find(x => channelKey(x.name) === key));
+  let items = player.queue.map(x => x === cur ? fresh : liveById(x.id)).filter(Boolean), at = fresh ? items.indexOf(fresh) : 0;
+  if (ev) {
+    const chans = eventChannels(ev).filter(c => c.item).map(c => c.item);
+    if (chans.length) { items = chans; at = Math.max(0, chans.findIndex(x => x.id === fresh?.id)); }
+  }
+  const now = items[at] ? [...items.map(x => x.id), ...backupIds(items[at].id)] : [];
+  const added = now.filter(id => !before.has(id)).length;
+  if (!items.length || !added) {
+    player.msg(failMsg + ' (La lista de canales del proveedor no ha cambiado.)');
+    player.failEl.hidden = false;
+    return;
+  }
+  toast(`La lista de canales ha cambiado: ${added} canal${added > 1 ? 'es' : ''} nuevo${added > 1 ? 's' : ''} para esto. Reintentando…`, 5000);
+  player.queue = items;
+  player.index = at;
+  player.load();
+};
 
 // ---------------------------------------------------------------- home page
 // Rows of cards: continue watching, favourite channels with what is on, the favourite teams'
@@ -1660,6 +1699,7 @@ function onItemClick(it, i, act) {
 // Live channel `i` of `items` (a folder, favourites, search results…), named `title` in the side list.
 function openLive(items, i, title, folderId) {
   playerKind = 'live';
+  liveEvent = null;
   player.queueTitle = title || 'Canales';
   player.queueFolder = folderId ?? null;
   player.open(items, i, resolveLive, favCtl('live'));
@@ -1720,7 +1760,7 @@ function liveAttempts(it) {
   return attempts;
 }
 
-const liveSources = chans => chans.map(c => ({ name: c.name, attempts: () => liveAttempts(c) }));
+const liveSources = chans => chans.map(c => ({ id: c.id, name: c.name, attempts: () => liveAttempts(c) }));
 
 function resolveLive(it) {
   return { title: it.name, live: true, sources: liveSources([it, ...backupsOf(it.id)]) };

@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261023a';
+import { startEngine, resetVideo } from './engines.js?v=20261026a';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -656,11 +656,14 @@ export class Player {
     this.nextSource('');
   }
 
+  // onGiveUp: () => void, when a live channel failed with every version (the app checks whether
+  // the provider changed its channel list).
   giveUp(text) {
     this.teardown();
     this.token++;
     this.msg(text);
     this.showFail('↻ Reintentar');
+    if (this.live && !this.cu && !this.sk) this.onGiveUp?.();
   }
 
   showFail(label) {

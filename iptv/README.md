@@ -49,6 +49,7 @@ Ten en cuenta:
   - en **Ajustes** se puede desactivar.
 - **Agenda deportiva**: partidos de los próximos días con los canales que los emiten. Puedes seguir a tus equipos, pedir un aviso al empezar o grabarlos.
 - **Canales de respaldo**: si un canal se corta, la app pasa sola a otra versión del mismo (FHD, HD, SD…).
+- **Listas de canales**: se guardan 12 h y el botón ⟳ las actualiza en cualquier momento. Si un canal no funciona con ninguna de sus versiones, la app vuelve a descargar la lista, porque los proveedores a veces cambian los canales antes de un evento importante, y reintenta con los canales nuevos. El grabador hace lo mismo.
 - **Zapping**: con ▲▼ del mando o deslizando el dedo. El piloto inferior muestra el programa, y «+ info» la sinopsis.
 - **Mosaico**: vista previa de varios canales con una sola conexión.
 - **Contenido adulto**: oculto por defecto. Para verlo hay que poner un PIN que creas la primera vez.

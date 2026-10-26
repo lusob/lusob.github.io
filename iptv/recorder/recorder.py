@@ -135,6 +135,44 @@ def source_urls(acc, src, formats):
     return [(src, f, f"{acc['server'].rstrip('/')}/live/{u}/{p}/{src['id']}.{f}") for f in order]
 
 
+LIST_EVERY = 600      # s between downloads of an account's channel list (see renumber)
+channel_lists = {}    # account server → (time, {normalised name: id})
+
+
+def norm_name(n):
+    return re.sub(r'\s+', ' ', str(n)).strip().lower()
+
+
+def renumber(acc, sources):
+    """Providers renumber channels now and then (often before big events): give the sources
+    whose number left the list the new number of the channel with the same name.
+    Returns how many changed; the list is downloaded at most every LIST_EVERY s."""
+    key = acc['server'] + '|' + acc['username']
+    t, by_name = channel_lists.get(key, (0, None))
+    if time.time() - t < LIST_EVERY:
+        return 0
+    q = urllib.parse.urlencode({'username': acc['username'], 'password': acc['password'], 'action': 'get_live_streams'})
+    try:
+        with urllib.request.urlopen(f"{acc['server'].rstrip('/')}/player_api.php?{q}", timeout=120) as res:
+            streams = json.load(res)
+    except (OSError, ValueError) as ex:
+        log('lista de canales:', type(ex).__name__)
+        channel_lists[key] = (time.time(), by_name)
+        return 0
+    ids = {str(x.get('stream_id')) for x in streams}
+    by_name = {}
+    for x in streams:
+        by_name.setdefault(norm_name(x.get('name', '')), str(x.get('stream_id')))
+    channel_lists[key] = (time.time(), by_name)
+    n = 0
+    for src in sources:
+        new = by_name.get(norm_name(src['name']))
+        if src['id'] not in ids and new:
+            src['id'] = new
+            n += 1
+    return n
+
+
 def segments(part_dir):
     """[(duration, filename)] from a part's ffmpeg playlist."""
     out, dur = [], None
@@ -222,6 +260,17 @@ class Worker(threading.Thread):
                     si, fi = (si + 1) % len(rec['sources']), 0
             total = sum(len(source_urls(acc, s, rec.get('formats'))) for s in rec['sources'])
             if dry and dry % total == 0:
+                # Maybe the provider renumbered its channels: look them up again by name
+                with lock:
+                    srcs = [dict(x) for x in rec['sources']]
+                n = renumber(acc, srcs)
+                if n:
+                    with lock:
+                        rec['sources'] = srcs
+                        save_recs()
+                    self.note(f'La lista de canales del proveedor ha cambiado: {n} canal{"es" if n > 1 else ""} con número nuevo; reintentando')
+                    si, fi = 0, 0
+                    continue
                 self.note('Ningún canal responde; reintentando en 20 s')
                 self.stop_flag.wait(20)
             else:
