@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261031g';
+import { startEngine, resetVideo } from './engines.js?v=20261031h';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -139,7 +139,9 @@ export class Player {
 
     // Show the bar on interaction, hide it after a few seconds of playback.
     const wake = () => {
+      const was = root.classList.contains('idle');
       root.classList.remove('idle');
+      if (was && this.isOpen) { this.drawCu(); this.drawBuf(); }
       clearTimeout(this.idleTimer);
       this.idleTimer = setTimeout(() => {
         if (!v.paused && this.menu.hidden) root.classList.add('idle');
@@ -367,6 +369,9 @@ export class Player {
 
   drawCu() {
     this.cuBar.hidden = !(this.cu || this.sk);
+    // Hidden (idle): no repaints every second over the video (weak TV boxes drop frames on them)
+    if (this.root.classList.contains('idle') && this.drawnOnce) return;
+    this.drawnOnce = true;
     if (this.sk) return this.drawSk();
     if (!this.cu) return;
     const { start, end } = this.cu;
@@ -506,6 +511,7 @@ export class Player {
 
   drawBuf() {
     const show = this.isOpen && !this.cu && this.played;
+    if (show && this.root.classList.contains('idle') && !this.bufEl.hidden) return;
     this.bufEl.hidden = !show;
     if (!show) return;
     const a = Math.max(0, Math.floor(this.ahead()));
@@ -579,7 +585,7 @@ export class Player {
     if (!q || !this.isOpen || this.video.paused) { this.lastDrop = null; return; }
     const d = q.droppedVideoFrames, last = this.lastDrop;
     this.lastDrop = d;
-    if (last != null && d - last >= 5) this.diag('dropped', `+${d - last} frames in 1 s ${this.video.videoWidth}x${this.video.videoHeight}`);
+    if (last != null && d - last >= 5) this.diag('dropped', `+${d - last} frames in 1 s ${this.video.videoWidth}x${this.video.videoHeight}${this.root.classList.contains('idle') ? ' idle' : ' controls'}`);
   }
 
   inBuffer(t) {
