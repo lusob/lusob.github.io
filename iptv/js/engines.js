@@ -8,6 +8,8 @@ export function startEngine(v, engine, url, opt, fail) {
   // TV browsers (Android WebView) refuse to start a video outside a key press / tap: report it.
   const play = () => { const p = v.play(); if (p) p.catch(e => { if (e?.name === 'NotAllowedError') onBlocked?.(); }); };
 
+  const fwd = sec => fromStart ? Math.max(30, sec) : Math.max(30, sec * 2);
+  const fwdMax = sec => fromStart ? Math.max(60, Math.round(sec * 1.5)) : Math.max(120, sec * 4);
   if (engine === 'hls') {
     const Hls = window.Hls;
     if (!Hls?.isSupported()) return failLater();
@@ -30,13 +32,15 @@ export function startEngine(v, engine, url, opt, fail) {
       // Generous: the adaptive buffer may leave us well behind the edge; don't jump back to live.
       // (a recording still growing is a "live" playlist to hls.js: never jump to its end on our own)
       liveMaxLatencyDuration: fromStart ? 1e9 : Math.max(buffer * 3 + 10, 600),
-      maxBufferLength: Math.max(30, buffer * 2),
+      // Recordings / catch-up (fromStart): just the target ahead; more only fills the memory of TV
+      // browsers, whose decoder then stalls with plenty downloaded.
+      maxBufferLength: fwd(buffer),
       // Recordings cut and resumed lose a frame or two between segments (0.1-0.2 s holes in the
       // video): with the default 0.1 s hls.js sees those segments as incomplete and downloads them
       // again and again (100 Mbit/s of nothing → stutter on Wi-Fi). Jump such holes instead.
       maxBufferHole: 0.5,
-      maxMaxBufferLength: Math.max(120, buffer * 4),
-      backBufferLength: 30,
+      maxMaxBufferLength: fwdMax(buffer),
+      backBufferLength: fromStart ? 10 : 30,
       // Patient with overloaded servers.
       manifestLoadingTimeOut: 30000, manifestLoadingMaxRetry: 3, manifestLoadingRetryDelay: 1500,
       levelLoadingTimeOut: 30000, levelLoadingMaxRetry: 6, levelLoadingRetryDelay: 1500,
@@ -76,8 +80,8 @@ export function startEngine(v, engine, url, opt, fail) {
       },
       setBuffer: sec => {
         hls.config.liveSyncDuration = sec;
-        hls.config.maxBufferLength = Math.max(30, sec * 2);
-        hls.config.maxMaxBufferLength = Math.max(120, sec * 4);
+        hls.config.maxBufferLength = fwd(sec);
+        hls.config.maxMaxBufferLength = fwdMax(sec);
       },
       audio: () => hls.audioTracks.map((t, i) => ({ id: i, label: trackLabel(t.name, t.lang, i), active: i === hls.audioTrack })),
       setAudio: id => { hls.audioTrack = id; },

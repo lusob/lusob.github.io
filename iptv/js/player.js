@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261031b';
+import { startEngine, resetVideo } from './engines.js?v=20261031c';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -708,8 +708,27 @@ export class Player {
       this.armTimer(VOD_STUCK);
       return;
     }
+    // Waiting with plenty downloaded ahead: the network is fine, the browser's decoder got stuck
+    // (seen on a TV at 110 s ahead). Refilling would loop forever (full → play → stuck → refill…).
+    if (this.ahead() >= 3) return this.unstick();
     // A real cut (live or not): bigger buffer if they are frequent, refill, go on.
     this.refill();
+  }
+
+  // A small jump forward, then a bigger one; the third time within 30 s, reconnect at the same
+  // point (a new decoder).
+  unstick() {
+    const now = Date.now(), v = this.video;
+    this.stuckN = now - (this.stuckAt || 0) < 30000 ? (this.stuckN || 0) + 1 : 1;
+    this.stuckAt = now;
+    if (this.stuckN >= 3) {
+      this.stuckN = 0;
+      this.msg('El vídeo se ha atascado: reconectando en el mismo punto…');
+      return this.failNow?.();
+    }
+    this.lastSeek = this.nudgedAt = now;
+    v.currentTime += this.stuckN === 1 ? 0.3 : 2;
+    this.play();
   }
 
   armTimer(sec) {
