@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261031e';
+import { startEngine, resetVideo } from './engines.js?v=20261031f';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -118,7 +118,10 @@ export class Player {
     // Diagnostics: what the player saw (stalls, engine errors…), sent to the recorder by the app
     // (onDiag) to find problems that only happen on one device.
     this.diagLines = [];
-    v.addEventListener('error', () => this.diag('video-error', `code=${v.error?.code} ${v.error?.message || ''}`));
+    v.addEventListener('error', () => {
+      this.diag('video-error', `code=${v.error?.code} ${v.error?.message || ''}`);
+      if (this.isOpen && this.played && v.error?.code === 3) this.decodeError();
+    });
     v.addEventListener('playing', () => this.onPlaying());
     v.addEventListener('timeupdate', () => this.hopHole());
     v.addEventListener('timeupdate', () => { if (!v.paused && v.currentTime > this.lastTime + 0.2) this.onPlaying(); });
@@ -744,6 +747,18 @@ export class Player {
     if (this.ahead() >= 3) return this.unstick();
     // A real cut (live or not): bigger buffer if they are frequent, refill, go on.
     this.refill();
+  }
+
+  // The decoder gave up on a broken frame (a recording with damaged audio from the provider: the
+  // Chromecast stops for good where desktop browsers skip it). Reconnect just past it; further
+  // each time it fails again around the same spot.
+  decodeError() {
+    const t = this.video.currentTime;
+    const again = Math.abs(t - (this.decErrT ?? -99)) < 10;
+    this.decErrT = t;
+    if (!this.live) this.skipTo = t + (again ? 3 : 1);
+    this.msg('Fallo al decodificar un trozo dañado: saltándolo…');
+    this.failNow?.();
   }
 
   // Reconnect at the same point (a new decoder; small jumps forward looked like skipping scenes).

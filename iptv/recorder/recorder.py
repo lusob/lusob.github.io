@@ -317,7 +317,9 @@ class Worker(threading.Thread):
         os.makedirs(pdir, exist_ok=True)
         cmd = [args.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
                '-rw_timeout', str(STALL * 1_000_000), '-i', url,
-               '-map', '0:v?', '-map', '0:a?', '-c', 'copy',
+               # Video copied as is; audio re-encoded: some sources send broken AAC frames now and
+               # then, which desktop browsers skip but stop the Chromecast's decoder for good.
+               '-map', '0:v?', '-map', '0:a?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
                '-f', 'hls', '-hls_time', '6', '-hls_list_size', '0',
                '-hls_segment_filename', os.path.join(pdir, 's%05d.ts'), os.path.join(pdir, 'index.m3u8')]
         self.note(f'Grabando de {src["name"]} ({fmt})')
