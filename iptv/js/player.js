@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261031d';
+import { startEngine, resetVideo } from './engines.js?v=20261031e';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -120,6 +120,7 @@ export class Player {
     this.diagLines = [];
     v.addEventListener('error', () => this.diag('video-error', `code=${v.error?.code} ${v.error?.message || ''}`));
     v.addEventListener('playing', () => this.onPlaying());
+    v.addEventListener('timeupdate', () => this.hopHole());
     v.addEventListener('timeupdate', () => { if (!v.paused && v.currentTime > this.lastTime + 0.2) this.onPlaying(); });
     v.addEventListener('waiting', () => this.onWaiting());
     v.addEventListener('seeking', () => { this.lastSeek = Date.now(); this.diag('seeking'); });
@@ -549,6 +550,23 @@ export class Player {
     this.frozenT = v.currentTime;          // our own jump is not progress: keep counting
     v.play?.().catch(() => {});
     this.lastSeek = this.nudgedAt = Date.now();
+  }
+
+  // A tiny hole in the buffered video just ahead (0.1 s between two pieces, seen in recordings):
+  // desktop Chrome plays through it, the Chromecast's decoder freezes there for good. Hop over
+  // it just before reaching it.
+  hopHole() {
+    const v = this.video, b = v.buffered, t = v.currentTime;
+    if (v.paused || v.seeking || this.filling || !this.played) return;
+    for (let i = 0; i + 1 < b.length; i++) {
+      const end = b.end(i), next = b.start(i + 1);
+      if (t < end && t >= end - 0.6 && next - end < 1.5) {
+        this.diag('hop', `${end.toFixed(2)}→${next.toFixed(2)}`);
+        this.lastSeek = this.nudgedAt = Date.now();
+        v.currentTime = next + 0.05;
+        return;
+      }
+    }
   }
 
   inBuffer(t) {
