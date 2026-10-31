@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261026a';
+import { startEngine, resetVideo } from './engines.js?v=20261031a';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -444,11 +444,17 @@ export class Player {
     this.filling = setInterval(() => {
       if (tok !== this.token) return clearInterval(this.filling);
       let ahead = this.ahead();
-      // Paused on a hole while the data piles up after it (it never fills): go to that data.
-      if (ahead < 0.5) {
-        const b = v.buffered, t = v.currentTime;
-        for (let i = 0; i < b.length; i++) {
-          if (b.start(i) > t && b.end(i) - b.start(i) > 1) { v.currentTime = b.start(i) + 0.1; this.nudgedAt = Date.now(); ahead = b.end(i) - b.start(i); break; }
+      // A hole in the stream (a timestamp jump, a broken segment) a little ahead, with the data
+      // piling up after it: it never fills, and paused we never reach it. Go to that data at once
+      // when we are on the hole, or once the piece before it stops growing.
+      const b = v.buffered, t = v.currentTime, end = t + ahead;
+      for (let i = 0; i < b.length; i++) {
+        if (b.start(i) > end + 0.05 && b.start(i) - end < 15 && b.end(i) - b.start(i) > 1 && (ahead < 0.5 || Date.now() - grewAt > 3000)) {
+          v.currentTime = b.start(i) + 0.1;
+          this.nudgedAt = Date.now();
+          ahead = b.end(i) - b.start(i);
+          grewAt = Date.now();
+          break;
         }
       }
       if (ahead > best + 0.5) { best = ahead; grewAt = Date.now(); this.armTimer(FILL_STUCK); }
