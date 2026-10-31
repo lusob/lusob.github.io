@@ -123,6 +123,34 @@ def save_accounts():
     save_json(args.conf, {'accounts': accounts}, private=True)
 
 
+DIAG_MAX = 1_000_000   # bytes of player diagnostics kept (the older half is dropped)
+
+
+def write_diag(who, lines):
+    """Player diagnostics sent by the screens (stalls, engine errors…), to find playback problems
+    that only happen on one device. On the USB stick, never the SD card."""
+    ok, _ = storage_ok()
+    if not ok or not lines:
+        return
+    path = os.path.join(args.data, 'diag.log')
+    with lock:
+        with open(path, 'a') as f:
+            f.write(f'== {time.strftime("%Y-%m-%d %H:%M:%S")} {who}\n' + ''.join(l.replace('\n', ' ') + '\n' for l in lines))
+        if os.path.getsize(path) > DIAG_MAX:
+            with open(path) as f:
+                keep = f.read()[-DIAG_MAX // 2:]
+            with open(path, 'w') as f:
+                f.write(keep)
+
+
+def read_diag():
+    try:
+        with open(os.path.join(args.data, 'diag.log')) as f:
+            return {'log': f.read()[-200_000:]}
+    except OSError:
+        return {'log': ''}
+
+
 def rec_dir(rid):
     return os.path.join(args.data, 'rec', rid)
 
@@ -480,7 +508,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def body(self):
-        n = int(self.headers.get('Content-Length') or 0)
+        n = min(int(self.headers.get('Content-Length') or 0), 8_000_000)
         try:
             return json.loads(self.rfile.read(n) or b'{}')
         except ValueError:
@@ -507,6 +535,8 @@ class Handler(BaseHTTPRequestHandler):
                     since = 0   # the store was reset: everything again
                 keys = {k: e['v'] for k, e in sync['keys'].items() if e['rev'] > since}
                 return self.send(200, {'rev': sync['rev'], 'keys': keys})
+        if path == '/api/diag':
+            return self.send(200, read_diag())
         m = re.match(r'^/rec/([a-z0-9]+)/(index\.m3u8|p\d+/s\d+\.ts)$', path)
         if m:
             with lock:
@@ -550,6 +580,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == '/api/diag':
+            b = self.body()
+            who = f"{self.client_address[0]} {self.headers.get('User-Agent', '')[:160]}"
+            write_diag(who, [str(x)[:500] for x in (b.get('lines') or [])][:200])
+            return self.send(200, {'ok': True})
         if path == '/api/recs':
             b = self.body()
             ok, why = storage_ok()

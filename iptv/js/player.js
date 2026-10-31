@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261031c';
+import { startEngine, resetVideo } from './engines.js?v=20261031d';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -115,10 +115,14 @@ export class Player {
     });
 
     const v = this.video;
+    // Diagnostics: what the player saw (stalls, engine errors…), sent to the recorder by the app
+    // (onDiag) to find problems that only happen on one device.
+    this.diagLines = [];
+    v.addEventListener('error', () => this.diag('video-error', `code=${v.error?.code} ${v.error?.message || ''}`));
     v.addEventListener('playing', () => this.onPlaying());
     v.addEventListener('timeupdate', () => { if (!v.paused && v.currentTime > this.lastTime + 0.2) this.onPlaying(); });
     v.addEventListener('waiting', () => this.onWaiting());
-    v.addEventListener('seeking', () => { this.lastSeek = Date.now(); });
+    v.addEventListener('seeking', () => { this.lastSeek = Date.now(); this.diag('seeking'); });
     v.addEventListener('loadedmetadata', () => this.updateTracks());
     v.addEventListener('timeupdate', () => {
       if (this.cu && this.cuT0 != null && this.cuPos() >= this.cu.end) this.finish();
@@ -435,6 +439,7 @@ export class Player {
     const target = this.eff;
     const v = this.video;
     const tok = this.token;
+    this.diag('refill', `target=${target}${grown ? ' grown' : ''}`);
     clearInterval(this.filling);
     v.pause();
     this.stopTicker();
@@ -467,6 +472,7 @@ export class Player {
       if (ahead >= target || (!this.live && Date.now() - t0 > target * 1500 && ahead > 2) || (Date.now() - grewAt > (native ? 2500 : 6000) && ahead > 1)) {
         clearInterval(this.filling);
         this.filling = 0;
+        this.diag('refilled', `after=${Math.round((Date.now() - t0) / 1000)}s`);
         this.play();
       }
     }, 500);
@@ -526,6 +532,8 @@ export class Player {
       if (next == null && b.start(i) > t + 0.05) next = b.start(i);
     }
     if (end - t < 1) return;           // nothing to play: a real cut, handled by 'waiting'
+    // Recordings, films: no jumps (they looked like skipping scenes), a new decoder at this point
+    if (!this.live && s >= 4) { this.frozenAt = null; this.diag('frozen'); return this.unstick(); }
     if (s >= 9) {
       this.frozenAt = null;
       this.msg('La imagen se ha congelado: reconectando…');
@@ -591,13 +599,17 @@ export class Player {
       onStatus: t => { if (tok === this.token) { this.stopTicker(); this.msg(t); } },
       onTracks: () => { if (tok === this.token) this.updateTracks(); },
       onBlocked: () => { if (tok === this.token) this.blockedPlay(); },
+      onDiag: (ev, extra) => { if (tok === this.token) this.diag(ev, extra); },
     }, fail);
+    this.diag('attempt', `${engine} ${this.current?.name || ''} buffer=${eff} resume=${Math.round(this.resumeAt || 0)}`);
     this.updateTracks();
   }
 
   failed() {
     const v = this.video;
+    this.diag('failed', `played=${this.played} reconnects=${this.reconnects}`);
     if (!this.live && v.currentTime > 1) this.resumeAt = v.currentTime;
+    if (this.skipTo) { this.resumeAt = this.skipTo; this.skipTo = 0; }
     const multi = this.sources.length > 1;
     let next, label, delay;
     if (this.played) {
@@ -710,25 +722,22 @@ export class Player {
     }
     // Waiting with plenty downloaded ahead: the network is fine, the browser's decoder got stuck
     // (seen on a TV at 110 s ahead). Refilling would loop forever (full → play → stuck → refill…).
+    this.diag('waiting');
     if (this.ahead() >= 3) return this.unstick();
     // A real cut (live or not): bigger buffer if they are frequent, refill, go on.
     this.refill();
   }
 
-  // A small jump forward, then a bigger one; the third time within 30 s, reconnect at the same
-  // point (a new decoder).
+  // Reconnect at the same point (a new decoder; small jumps forward looked like skipping scenes).
+  // Stuck again and again at the same spot: past it, 5 s further each time.
   unstick() {
-    const now = Date.now(), v = this.video;
-    this.stuckN = now - (this.stuckAt || 0) < 30000 ? (this.stuckN || 0) + 1 : 1;
-    this.stuckAt = now;
-    if (this.stuckN >= 3) {
-      this.stuckN = 0;
-      this.msg('El vídeo se ha atascado: reconectando en el mismo punto…');
-      return this.failNow?.();
-    }
-    this.lastSeek = this.nudgedAt = now;
-    v.currentTime += this.stuckN === 1 ? 0.3 : 2;
-    this.play();
+    const v = this.video, t = v.currentTime;
+    this.stuckN = Math.abs(t - (this.stuckT ?? -99)) < 3 ? (this.stuckN || 0) + 1 : 0;
+    this.stuckT = t;
+    this.diag('stuck', `n=${this.stuckN}`);
+    this.skipTo = !this.live && this.stuckN >= 2 ? t + 5 * (this.stuckN - 1) : 0;
+    this.msg('El vídeo se ha atascado: reconectando en el mismo punto…');
+    this.failNow?.();
   }
 
   armTimer(sec) {
@@ -838,6 +847,18 @@ export class Player {
   }
 
   msg(t) { this.msgEl.textContent = t; }
+
+  diag(ev, extra = '') {
+    const v = this.video, b = v.buffered, q = v.getVideoPlaybackQuality?.();
+    const ranges = [];
+    for (let i = 0; i < b.length; i++) ranges.push(`${b.start(i).toFixed(1)}-${b.end(i).toFixed(1)}`);
+    const line = `${new Date().toISOString().slice(11, 19)} ${ev} t=${v.currentTime.toFixed(1)} ahead=${this.ahead().toFixed(1)} ` +
+      `rs=${v.readyState} ns=${v.networkState} paused=${v.paused} eng=${this.attempts?.[this.cur]?.[0] || '-'} ` +
+      `buf=[${ranges.slice(0, 4).join(' ')}]${q ? ` frames=${q.totalVideoFrames}/${q.droppedVideoFrames}` : ''} ${extra}`;
+    this.diagLines.push(line);
+    if (this.diagLines.length > 300) this.diagLines.shift();
+    this.onDiag?.();
+  }
 
   // auto: on opening. The iPhone only has the video's own fullscreen player, which hides our
   // messages and controls (black screen at 00:00 while loading): only on request there.

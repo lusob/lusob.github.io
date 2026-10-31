@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261031c';
-import * as store from './store.js?v=20261031c';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261031c';
-import { Player } from './player.js?v=20261031c';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261031c';
-import { Grid } from './grid.js?v=20261031c';
-import { Mosaic } from './mosaic.js?v=20261031c';
-import { initRemote } from './remote.js?v=20261031c';
-import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261031c';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261031c';
-import { Zapper } from './zap.js?v=20261031c';
-import { initTouch } from './touch.js?v=20261031c';
-import { initSync } from './sync.js?v=20261031c';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261031d';
+import * as store from './store.js?v=20261031d';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261031d';
+import { Player } from './player.js?v=20261031d';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261031d';
+import { Grid } from './grid.js?v=20261031d';
+import { Mosaic } from './mosaic.js?v=20261031d';
+import { initRemote } from './remote.js?v=20261031d';
+import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261031d';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261031d';
+import { Zapper } from './zap.js?v=20261031d';
+import { initTouch } from './touch.js?v=20261031d';
+import { initSync } from './sync.js?v=20261031d';
 
-const VERSION = '2026-10-31c';
+const VERSION = '2026-10-31d';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -44,6 +44,18 @@ ui.hideDead ??= false;
 
 const player = new Player($('#player'), () => settings);
 player.guard = () => confirmBusy();   // changing channel while the Pi records
+// Player diagnostics (stalls, engine errors…) → the recorder's diag.log, every 10 s, to find
+// problems that only happen on one screen.
+let diagTimer = 0;
+const flushDiag = () => {
+  diagTimer = 0;
+  const lines = player.diagLines.splice(0);
+  if (lines.length) piApi('POST', 'diag', { lines }).catch(() => {});
+};
+player.onDiag = () => { if (recorder && !diagTimer) diagTimer = setTimeout(flushDiag, 10000); };
+addEventListener('pagehide', () => {
+  if (recorder && player.diagLines.length) navigator.sendBeacon?.('/api/diag', new Blob([JSON.stringify({ lines: player.diagLines.splice(0) })], { type: 'application/json' }));
+});
 player.saveSettings = () => store.set('settings', settings);
 delete settings.bufLearned;      // one learned buffer for every channel (before 2026-10-19)
 delete settings.bufLearnedVod;

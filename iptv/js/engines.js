@@ -56,6 +56,7 @@ export function startEngine(v, engine, url, opt, fail) {
     });
     let recovered = false;
     hls.on(Hls.Events.ERROR, (_, d) => {
+      opt.onDiag?.('hls-error', `${d.type}/${d.details}${d.fatal ? ' FATAL' : ''}${d.error?.message ? ' ' + d.error.message.slice(0, 120) : ''}`);
       if (!d.fatal) return;
       if (d.type === Hls.ErrorTypes.MEDIA_ERROR && !recovered) { recovered = true; hls.recoverMediaError(); }
       else fail();
