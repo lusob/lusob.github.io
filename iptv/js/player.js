@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261031a';
+import { startEngine, resetVideo } from './engines.js?v=20261031b';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -440,6 +440,7 @@ export class Player {
     this.stopTicker();
     this.armTimer(FILL_STUCK);
     let best = -1, grewAt = Date.now();
+    const native = /^native/.test(this.attempts?.[this.cur]?.[0] || '');
     const t0 = Date.now();
     this.filling = setInterval(() => {
       if (tok !== this.token) return clearInterval(this.filling);
@@ -461,7 +462,9 @@ export class Player {
       this.msg(`${grown ? `Cortes frecuentes: buffer ampliado a ${target} s. ` : ''}Llenando buffer… ${Math.floor(Math.max(0, ahead))}/${target} s`);
       // VOD: the browser may stop downloading before reaching the target; don't wait forever.
       // Live: the server may not keep that much behind the edge; once it stops growing, go on.
-      if (ahead >= target || (!this.live && Date.now() - t0 > target * 1500 && ahead > 2) || (Date.now() - grewAt > 6000 && ahead > 3)) {
+      // The browser's own player (iPhone, some TVs) stops downloading a few seconds ahead while
+      // paused: there, as soon as it stops growing, go on (else it would wait forever, e.g. at 2/60 s).
+      if (ahead >= target || (!this.live && Date.now() - t0 > target * 1500 && ahead > 2) || (Date.now() - grewAt > (native ? 2500 : 6000) && ahead > 1)) {
         clearInterval(this.filling);
         this.filling = 0;
         this.play();
