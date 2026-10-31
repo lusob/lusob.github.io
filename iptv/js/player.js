@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261031f';
+import { startEngine, resetVideo } from './engines.js?v=20261031g';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -33,7 +33,7 @@ export class Player {
     this.title = root.querySelector('#pTitle');
     this.bufEl = root.querySelector('#pBuf');
     // Live: show the cushion every second, and give back buffer after a long time without cuts.
-    setInterval(() => { this.drawBuf(); this.frozen(); this.applySkip(); }, 1000);
+    setInterval(() => { this.drawBuf(); this.frozen(); this.applySkip(); this.dropWatch(); }, 1000);
     setInterval(() => this.relax(), 60e3);
     this.info = root.querySelector('#pInfo');
     this.msgEl = root.querySelector('#pMsg');
@@ -570,6 +570,16 @@ export class Player {
         return;
       }
     }
+  }
+
+  // Diagnostics: frames the browser dropped (picture freezing a moment while the sound goes on),
+  // logged when it happens with what was playing.
+  dropWatch() {
+    const q = this.video.getVideoPlaybackQuality?.();
+    if (!q || !this.isOpen || this.video.paused) { this.lastDrop = null; return; }
+    const d = q.droppedVideoFrames, last = this.lastDrop;
+    this.lastDrop = d;
+    if (last != null && d - last >= 5) this.diag('dropped', `+${d - last} frames in 1 s ${this.video.videoWidth}x${this.video.videoHeight}`);
   }
 
   inBuffer(t) {
