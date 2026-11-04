@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0d0f13">
   <title>IPTV</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%234f8cff'/%3E%3Cpath d='M13 11v10l8-5z' fill='%23fff'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=20261031h">
+  <link rel="stylesheet" href="css/app.css?v=20261104a">
   <!-- Interface size (Ajustes): small = html.tv, big = html.big (see app.css). Automatic: TV browsers
        (big screen at a small CSS size) get the small one. -->
   <script>try { const z = localStorage.getItem('iptv-scale') || '', c = document.documentElement.classList;
@@ -14,7 +14,7 @@
     else if (z === 'l') c.add('big'); } catch {}</script>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js" defer></script>
-  <script type="module" src="js/app.js?v=20261031h"></script>
+  <script type="module" src="js/app.js?v=20261104a"></script>
 </head>
 <body>
 
@@ -57,7 +57,7 @@
       </nav>
       <button id="recBanner" hidden></button>
       <div class="search-box">
-        <input id="search" type="search" placeholder="Buscar canales, partidos, programas…" autocomplete="off" spellcheck="false">
+        <input id="search" type="search" placeholder="Buscar" autocomplete="off" spellcheck="false">
         <div id="recentQ" hidden></div>
       </div>
       <button id="refresh" class="icon" title="Actualizar listas" aria-label="Actualizar">⟳</button>
@@ -115,6 +115,7 @@
       <button id="pPrev" class="icon" aria-label="Anterior">‹</button>
       <button id="pNext" class="icon" aria-label="Siguiente">›</button>
       <button id="pZoom" class="icon txt" aria-label="Encuadre de la imagen">Zoom</button>
+      <button id="pMore" class="icon" aria-label="Opciones">⋯</button>
       <button id="pFs" class="icon" aria-label="Pantalla completa">⛶</button>
     </div>
     <div id="pCu" hidden>
@@ -128,6 +129,7 @@
       <button id="cuFwd" class="icon txt" data-s="300" aria-label="Adelante 5 minutos">5 min »</button>
       <button id="cuLive" class="icon txt" hidden>Directo</button>
     </div>
+    <div id="pKeys">◀ ▶ 30 s · OK pausa · ▼ controles · ▲ opciones</div>
     <div id="pMsg"></div>
     <div id="pFail" hidden>
       <button id="pRetry" class="primary">Reintentar</button>

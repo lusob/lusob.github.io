@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261031h';
-import * as store from './store.js?v=20261031h';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261031h';
-import { Player } from './player.js?v=20261031h';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261031h';
-import { Grid } from './grid.js?v=20261031h';
-import { Mosaic } from './mosaic.js?v=20261031h';
-import { initRemote } from './remote.js?v=20261031h';
-import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261031h';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261031h';
-import { Zapper } from './zap.js?v=20261031h';
-import { initTouch } from './touch.js?v=20261031h';
-import { initSync } from './sync.js?v=20261031h';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261104a';
+import * as store from './store.js?v=20261104a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261104a';
+import { Player } from './player.js?v=20261104a';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261104a';
+import { Grid } from './grid.js?v=20261104a';
+import { Mosaic } from './mosaic.js?v=20261104a';
+import { initRemote } from './remote.js?v=20261104a';
+import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261104a';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261104a';
+import { Zapper } from './zap.js?v=20261104a';
+import { initTouch } from './touch.js?v=20261104a';
+import { initSync } from './sync.js?v=20261104a';
 
-const VERSION = '2026-10-31h';
+const VERSION = '2026-11-04a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -1599,7 +1599,7 @@ function pushRecent(q) {
 }
 function showRecent() {
   const el = $('#recentQ'), box = $('#search');
-  const show = (document.activeElement === box || el.contains(document.activeElement)) && !box.value && recentQ.length > 0;
+  const show = ((document.activeElement === box && !box.dataset.nav) || el.contains(document.activeElement)) && !box.value && recentQ.length > 0;
   el.hidden = !show;
   if (show) el.innerHTML = '<div class="rq-title">Búsquedas recientes</div>' + recentQ.map((q, i) => `<button type="button" data-q="${i}">🕘 ${esc(q)}</button>`).join('');
 }
@@ -2008,7 +2008,7 @@ function renderGuide(ch, list) {
     if (state !== 'past' && (recorder || hasArchive([ch, ...backupsOf(ch.id)]))) {
       btns += `<button data-act="rec" class="${saved ? 'on' : ''}">${saved ? (recorder ? '✓ Programada' : '✓ Guardado') : (recorder ? '⏺ Grabar' : '⏺ Guardar')}</button>`;
     }
-    html += `<div class="g-row ${state}${state === 'past' && !avail ? ' gone' : ''}" data-i="${i}">
+    html += `<div class="g-row ${state}${state === 'past' && !avail ? ' gone' : ''}" data-i="${i}" tabindex="0">
       ${pics ? `<div class="g-img">${artImg(p.img, 192, 108, '')}</div>` : ''}
       <div class="g-time">${hhmm(p.start)}–${hhmm(p.end)}</div>
       <div class="grow"><div class="name">${esc(p.title || 'Sin título')}</div><div class="meta">${esc(meta)}</div></div>
@@ -2036,7 +2036,11 @@ function renderGuide(ch, list) {
     }
   };
   const at = guideAt != null ? progs.findIndex(p => p.start === guideAt) : -1;
-  if (at >= 0) body.querySelector(`.g-row[data-i="${at}"]`).classList.add('hit');
+  if (at >= 0) {
+    const row = body.querySelector(`.g-row[data-i="${at}"]`);
+    row.classList.add('hit');
+    if (document.body.classList.contains('kbd')) row.focus();
+  }
   const cur = body.querySelector('.g-row.hit') || body.querySelector('.g-row.now') || body.querySelector('.g-row:not(.past)');
   if (cur) body.scrollTop = Math.max(0, cur.offsetTop - body.offsetTop - 60);
 }

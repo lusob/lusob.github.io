@@ -1,16 +1,16 @@
 :root {
-  --bg: #0d0f13;
-  --panel: #151820;
-  --panel-2: #1c2029;
-  --line: #262b37;
-  --text: #e9ebf1;
-  --muted: #8b92a5;
-  --accent: #4f8cff;
+  --bg: #0a0e15;
+  --panel: #121824;
+  --panel-2: #1b2334;
+  --line: #273146;
+  --text: #eef1f7;
+  --muted: #8e98ad;
+  --accent: #3d8bff;
   --star: #ffc94d;
   --new: #2ecc71;
   --danger: #ff5c5c;
   --dim: #a3a9b8;
-  --radius: 12px;
+  --radius: 14px;
   --tap: 56px;
   color-scheme: dark;
 }
@@ -660,3 +660,108 @@ html.big .check-list { max-height: calc(50vh / 1.15); }
 .g-img { flex: none; width: 96px; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: var(--panel-2); }
 .g-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 @media (max-width: 760px) { .g-img { width: 72px; } .g-time { width: 92px; font-size: 13px; } }
+
+/* ---------- Look: one focus style for the remote, panels over the video, nothing wrapping ---------- */
+body { background: radial-gradient(1200px 600px at 80% -10%, #16233d 0%, transparent 60%), var(--bg); }
+button { transition: background-color .12s, color .12s, transform .12s; white-space: nowrap; }
+button.primary { background: linear-gradient(180deg, #4d97ff, #2f78ec); border-color: transparent; font-weight: 600; }
+.top { background: rgb(10 14 21 / .75); border-bottom: 0; padding: 12px 16px; gap: 12px; }
+.tabs button { position: relative; font-weight: 600; font-size: 18px; border: 0; border-radius: 12px; }
+.tabs button.active { background: transparent; color: #fff; }
+.tabs button.active::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: 5px; height: 3px; border-radius: 2px; background: var(--accent); }
+.top button.icon { border-radius: 50%; border-color: transparent; background: rgb(255 255 255 / .07); }
+#search { border-radius: 999px; border-color: transparent; padding-left: 46px; background: rgb(255 255 255 / .07) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' fill='none' stroke='%238e98ad' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cpath d='m15 15 5 5'/%3E%3C/svg%3E") 15px 50% no-repeat; }
+#folders { background: transparent; border-right: 1px solid rgb(255 255 255 / .06); }
+.pane-head { border-bottom: 0; }
+.vl-row { padding: 2px 8px; }
+.row { border-bottom: 0; border-radius: 12px; padding-left: 12px; }
+.row.active { background: rgb(61 139 255 / .14); box-shadow: inset 3px 0 0 var(--accent); }
+.logo { border-radius: 10px; }
+.card { background: linear-gradient(180deg, #182133, var(--panel)); border-color: rgb(255 255 255 / .08); border-radius: 20px; box-shadow: 0 24px 70px rgb(0 0 0 / .6); }
+dialog::backdrop { background: rgb(4 7 12 / .72); }
+.hcard { background: var(--panel); border-color: transparent; transition: transform .14s ease-out, box-shadow .14s; }
+.h-row { padding: 10px 16px 14px; scrollbar-width: none; }
+.h-row::-webkit-scrollbar { display: none; }
+.h-sec { margin: 6px 0 0; }
+.h-sec h3 { font-size: 17px; color: #fff; }
+.hcard.hint, .hcard.more { border: 1px dashed var(--line); }
+.hc-art { background: radial-gradient(circle at 30% 20%, #2c3f66, #141b2a 70%); }
+
+/* The remote's focus: white, like the TV's own menus */
+body.kbd button:focus, body.kbd select:focus, body.kbd summary:focus, body.kbd a:focus, dialog .g-row:focus-within button:focus, .kact {
+  outline: 0; background: #fff !important; border-color: #fff !important; color: #0a0e15 !important; box-shadow: 0 6px 22px rgb(0 0 0 / .55);
+}
+body.kbd button:focus::after { background: var(--accent); }
+body.kbd input:focus { outline: 3px solid #fff; outline-offset: 1px; }
+body.kbd input[data-nav]:focus { background-color: rgb(255 255 255 / .16); }
+body.kbd input[type=checkbox]:focus { outline-offset: 3px; }
+body.kbd .g-row:focus { outline: 0; background: rgb(61 139 255 / .28); box-shadow: inset 0 0 0 3px #fff; border-radius: 10px; }
+.vl-row.kfocus > .row { background: linear-gradient(90deg, #3d8bff, #2a6de0); box-shadow: 0 6px 20px rgb(0 0 0 / .45); color: #fff; }
+.vl-row.kfocus > .row .meta, .vl-row.kfocus > .row .meta.epg b, .vl-row.kfocus > .row .dim, .vl-row.kfocus > .row .from, .vl-row.kfocus > .row .ag-comp, .vl-row.kfocus > .row small { color: #e6eeff; }
+.vl-row.kfocus > .row .bar { background: rgb(255 255 255 / .3); }
+.vl-row.kfocus > .row .bar i { background: #fff; }
+.vl-row.kfocus > .row .star:not(.on), .vl-row.kfocus > .row .gbtn { color: rgb(255 255 255 / .7); }
+.hcard.kfocus { outline: 3px solid #fff; outline-offset: 0; border-color: transparent; transform: scale(1.05); z-index: 2; box-shadow: 0 14px 34px rgb(0 0 0 / .65); }
+.hcard.hero.kfocus { transform: none; }
+.tile.kfocus { transform: scale(1.03); box-shadow: 0 0 0 3px #fff, 0 12px 30px rgb(0 0 0 / .6); }
+.g-track .gcell.kfocus { background: #fff; color: #0a0e15; outline: 0; }
+.g-track .gcell.kfocus .g-pm { color: #3a4356; }
+
+/* Player: a light top bar (the rest is in Opciones), panels at the sides */
+.pbar { flex-wrap: nowrap; justify-content: flex-start; padding: 12px 16px 36px; background: linear-gradient(rgb(0 0 0 / .78), transparent); }
+.pbar > button:not(#pClose):not(#pList):not(#pMore):not(#pFs):not(#pPrev):not(#pNext) { display: none; }
+.pbar button, #pCu button { border-radius: 50%; border-color: transparent; background: rgb(255 255 255 / .12); }
+.ptext { flex: 1 1 0; }
+#pTitle { font-size: 19px; }
+#pMenu, #zap { background: rgb(10 14 21 / .94); }
+#pMenu { top: 0; bottom: 0; right: 0; width: min(400px, 88vw); max-height: none; gap: 6px; padding: 20px 14px; border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: -8px 0 24px rgb(0 0 0 / .5); }
+#pMenu button { flex: none; min-height: 58px; border-radius: 12px; overflow: hidden; text-overflow: ellipsis; }
+.pm-title { padding: 4px 12px 10px; color: #fff; font-size: 20px; font-weight: 600; }
+#zap { border-right-color: rgb(255 255 255 / .08); }
+#pCu { left: 0; right: 0; bottom: 0; padding: 40px 16px 14px; border-radius: 0; background: linear-gradient(transparent, rgb(0 0 0 / .85)); }
+#pCu .txt { border-radius: 999px; }
+#cuTrack::before, #cuAvail, #cuFill { height: 6px; margin-top: -3px; }
+#cuFill::after { top: -6px; }
+#pKeys { position: absolute; left: 0; right: 0; bottom: 92px; display: none; text-align: center; font-size: 15px; color: #d7dce7; text-shadow: 0 1px 4px #000; pointer-events: none; transition: opacity .3s; }
+body.kbd #player.catchup #pKeys { display: block; }
+#player.idle #pKeys { opacity: 0; }
+#pilot { left: 0; right: 0; bottom: 0; padding: 40px 28px 22px; border-radius: 0; background: linear-gradient(transparent, rgb(5 8 13 / .94) 42%); backdrop-filter: none; }
+#pilot .logo { border-radius: 12px; }
+.pl-info-btn { border-radius: 999px; }
+
+dialog { position: fixed; inset: 0; margin: auto; max-width: calc(100vw - 24px); max-height: none; width: fit-content; height: fit-content; }
+#pMenu { z-index: 5; }
+#pMenu button { background: rgb(255 255 255 / .05); }
+/* With the remote everything is in Opciones: only the title stays on top */
+body.kbd .pbar button { display: none; }
+.row.sec { background: transparent; }
+
+/* Text in small panes does not push the buttons to a new line */
+.pane-head { flex-wrap: nowrap; }
+.pane-head h2 { min-width: 60px; }
+.pane-head .txt { flex: none; }
+.actions button { flex: 1 1 auto; }
+@media (max-width: 760px) {
+  .top { padding: 8px 10px; gap: 8px; }
+  .tabs button { font-size: 16px; }
+  .tabs button.active::after { left: 22%; right: 22%; }
+  .row { gap: 10px; padding-right: 2px; }
+  .logo { width: 46px; height: 46px; font-size: 13px; }
+  .row .star, .row .gbtn { width: 38px; font-size: 21px; }
+  .pane-head { padding: 6px 10px; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .pane-head::-webkit-scrollbar { display: none; }
+  .pane-head .txt { padding: 0 10px; font-size: 14px; }
+  .pbar { padding: 8px 8px 30px; gap: 6px; }
+  .pbar .ptext { order: 0; flex: 1 1 0; }
+  .pbar > #pPrev, .pbar > #pNext { display: none; }
+  #pCu { flex-wrap: wrap; justify-content: center; gap: 6px; padding: 30px 8px 10px; }
+  #pCu::after { content: ''; order: 1; flex-basis: 100%; }
+  #cuTime { order: -3; font-size: 14px; }
+  #cuTrack { order: -2; flex: 1 1 0; height: 32px; }
+  #cuEnd { order: -1; font-size: 14px; }
+  #cuBack { order: 2; } #cuBack30 { order: 3; } #cuPlay { order: 4; } #cuFwd30 { order: 5; } #cuFwd { order: 6; } #cuLive { order: 7; }
+  #pCu .txt { padding: 0 8px; font-size: 14px; }
+  #pilot { padding: 30px 14px 14px; }
+  .actions { flex-direction: column; }
+  .card { padding: 20px 16px; }
+}

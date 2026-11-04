@@ -55,6 +55,13 @@ Ten en cuenta:
 - **Contenido adulto**: oculto por defecto. Para verlo hay que poner un PIN que creas la primera vez.
 - **Buffer adaptativo**: si un canal se corta a menudo, la app guarda más vídeo por adelantado. Se ajusta en Ajustes.
 
+**Con el mando** (Google TV y similares, sin modo cursor): las flechas mueven, OK actúa y Atrás retrocede un nivel. Los campos de texto no abren el teclado hasta que pulsas OK.
+
+| Viendo | ◀ | ▶ | ▲ ▼ | OK |
+|---|---|---|---|---|
+| Directo | Lista de canales | Opciones (guía, grabar, canal anterior…) | Ver qué echan en otros canales | Información; en otro canal, cambiar a él |
+| Grabación o diferido | −30 s | +30 s | ▲ opciones · ▼ controles | Pausa |
+
 En el Tesla, el vídeo solo se reproduce con el coche en *Park*.
 
 ## Opcional: grabador y sincronización con una Raspberry Pi

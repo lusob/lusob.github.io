@@ -3,12 +3,12 @@
 //   folders; OK plays, Back / Right closes.
 // - Up / Down ("pilot") browses the neighbouring channels in a translucent footer with their
 //   programme; nothing changes until OK.
-// - Right (with the footer shown) or 0: back to the channel watched before.
+// - Right: options (remote.js), with or without the footer; 0: back to the channel watched before.
 // - «+ info» (OK on the channel being watched, the Info key or a tap on the button): the footer
 //   grows with the programme's genre line and synopsis (public guide).
 
-import { esc, initials, VList } from './ui.js?v=20261031h';
-import { hhmm, artUrl } from './epg.js?v=20261031h';
+import { esc, initials, VList } from './ui.js?v=20261104a';
+import { hhmm, artUrl } from './epg.js?v=20261104a';
 
 const PILOT_HIDE = 6000;   // ms without keys before the footer goes away (without switching)
 const INFO_HIDE = 4000;    // footer shown briefly after every channel change
@@ -167,7 +167,7 @@ export class Zapper {
         ${this.more ? this.moreHtml(it, e?.now) : ''}
       </div>
       ${e?.now ? `<button type="button" class="pl-info-btn" data-info>${this.more ? '− info' : '+ info'}</button>` : ''}
-      <div class="pl-keys dim">▲▼ canales · OK ${here ? (this.more ? 'cerrar info' : '+ info') : 'ver'} · ◀ lista${this.ctx.lastName?.() ? `<br>▶ volver a ${esc(this.ctx.lastName())}` : ''}</div>`;
+      <div class="pl-keys dim">▲▼ canales · OK ${here ? (this.more ? 'cerrar info' : '+ info') : 'ver'}<br>◀ lista · ▶ opciones</div>`;
     this.pilotEl.classList.toggle('more', !!this.more);
   }
 
@@ -254,7 +254,6 @@ export class Zapper {
     if (k === 'ArrowLeft') { this.openChans(); return true; }
     if (this.pilotOn) {
       if (k === 'Enter') { if (this.pIdx === this.ctx.player.index) this.toggleMore(); else this.go(); return true; }
-      if (k === 'ArrowRight' && this.ctx.lastName?.()) { this.hidePilot(); this.ctx.goLast(); return true; }
       if (isBack || k === 'ArrowRight') { this.hidePilot(); return isBack; }
       return false;
     }

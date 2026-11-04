@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261031h';
+import { startEngine, resetVideo } from './engines.js?v=20261104a';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -80,6 +80,7 @@ export class Player {
       this.fav.toggle(this.current);
       this.updateFav();
     };
+    root.querySelector('#pMore').onclick = e => { e.stopPropagation(); this.openOptions(); };
     this.audioBtn.onclick = e => { e.stopPropagation(); this.openMenu('audio'); };
     this.subsBtn.onclick = e => { e.stopPropagation(); this.openMenu('subs'); };
     this.menu.addEventListener('click', e => {
@@ -322,6 +323,29 @@ export class Player {
     const live = this.cuBar.querySelector('#cuLive');
     live.hidden = !this.sk.growing();
     live.textContent = avail - t > 30 ? 'Ir al final' : '● Al día';
+  }
+
+  // Every action of the player in one panel (right side), for the remote and for small screens:
+  // the top bar only keeps the essentials. Taken from its buttons, so it is always up to date.
+  openOptions() {
+    const OPT = {
+      pLast: b => `⇆ ${b.title || 'Canal anterior'}`, pStart: () => '⏮ Ver desde el inicio', pRec: b => b.textContent.trim(), pGuide: () => '≡ Guía del canal',
+      pAlt: b => b.textContent.trim(), pBackup: () => '⇄ Canales de respaldo', pFav: b => b.classList.contains('on') ? '★ Quitar de favoritos' : '☆ Añadir a favoritos',
+      pAudio: () => '♪ Audio', pSubs: () => '▭ Subtítulos', pPrev: () => '‹ Anterior', pNext: () => '› Siguiente',
+      pZoom: b => `⤢ Encuadre: ${b.textContent.trim()}`, pClose: () => '✕ Salir',
+    };
+    const entries = Object.entries(OPT).flatMap(([id, label]) => {
+      const b = this.root.querySelector('#' + id);
+      if (!b || b.hidden || b.disabled || (this.live && (id === 'pPrev' || id === 'pNext'))) return [];
+      return [{ label: label(b), fn: () => b.click() }];
+    });
+    this.showMenu('Opciones', entries);
+  }
+
+  seekBy(s) {
+    const b = this.root.querySelector(`#pCu [data-s="${s}"]`);
+    if (this.cu || this.sk) b?.click();
+    else if (!this.live) this.video.currentTime += s;
   }
 
   // Menu with arbitrary actions: entries [{ label, on?, fn }].

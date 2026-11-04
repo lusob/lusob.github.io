@@ -1,9 +1,14 @@
 // TV remote / keyboard navigation (Google TV browsers send arrows, Enter and Back as keys).
 // Touch use is untouched: the highlight only appears after an arrow key and disappears on touch.
 // Zones: 'top' (tab bar + pane header buttons), 'folders', 'items' (list, mosaic or series).
+// The same rules everywhere: arrows move, OK acts, Back goes one level up. In the player:
+// - live: Left = channels, Right = options, Up / Down = pilot footer, OK = info;
+// - recordings, catch-up, films: Left / Right = 30 s, OK = pause, Down = controls, Up = options.
 
 const BACK = new Set(['Escape', 'GoBack', 'BrowserBack', 'Backspace']);
 const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
+const TEXT = 'input[type=text], input[type=search], input[type=password], input:not([type]), input[type=datetime-local]';
 
 const shown = el => !!el && !el.hidden && el.offsetParent !== null && !el.disabled;
 
@@ -14,7 +19,40 @@ export function initRemote(ctx) {
   let zone = null;
   let act = -1;   // items zone: -1 = the row itself, otherwise index of its action button
 
-  const topButtons = () => [...document.querySelectorAll('.top button, .top input, .pane-head button')].filter(shown);
+  const topButtons = () => [...document.querySelectorAll('.top button, .top input')].filter(shown);
+  const headButtons = () => [...document.querySelectorAll('.pane-head button')].filter(shown);
+  const focusTab = () => (document.querySelector('.tabs button.active') || topButtons()[0])?.focus();
+  // Up from a list: its header buttons, or the tabs when it has none.
+  function goUp() {
+    setZone('top');
+    const b = headButtons()[0];
+    if (b) b.focus(); else focusTab();
+  }
+
+  // Android opens its on-screen keyboard as soon as a text field has the focus, and the arrows then
+  // go to the keyboard (the field traps you). With a remote a field takes the focus read-only and
+  // the arrows go past it; OK starts typing.
+  let editing = null;
+  document.addEventListener('focus', e => {
+    const el = e.target;
+    if (document.body.classList.contains('kbd') && el.matches?.(TEXT) && el !== editing) { el.readOnly = true; el.dataset.nav = '1'; }
+  }, true);
+  document.addEventListener('blur', e => {
+    const el = e.target;
+    if (el === editing) editing = null;
+    if (el.dataset?.nav) { delete el.dataset.nav; el.readOnly = false; }
+  }, true);
+  function edit(el) {
+    el.blur();          // the keyboard only opens on a new focus
+    editing = el;
+    el.focus();
+    if (el.type === 'datetime-local') try { el.showPicker(); } catch {}
+  }
+  function stopEdit(el) {
+    editing = null;
+    el.blur();
+    el.focus();
+  }
   // The horizontal guide moves like the mosaic (its cells are the tiles).
   // So do the cards of the home page.
   const home = () => !ctx.homeEl.hidden;
@@ -43,9 +81,16 @@ export function initRemote(ctx) {
   function enterItems() {
     act = -1;
     const m = mode();
-    if (m === 'list') itemList.setCursor(itemList.cursor ?? 0, true);
+    if (m === 'list') itemList.setCursor(rowFrom(itemList.cursor ?? 0, 1) ?? 0, true);
     else if (m === 'mosaic') focusTile(curTile() || (!ctx.gridEl?.hidden && ctx.gridEl.querySelector('.gcell.on')) || tiles()[0]);
     else (ctx.seriesEl.querySelector('.ep') || ctx.seriesEl.querySelector('.chips button, [data-retry]'))?.focus();
+  }
+
+  // The next row that can be selected (section titles of the search can't), or null.
+  function rowFrom(i, d) {
+    const l = itemList.items;
+    while (l[i]?.sec) i += d;
+    return l[i] ? i : null;
   }
 
   // ---- list rows with action buttons (★, guide…)
@@ -93,13 +138,37 @@ export function initRemote(ctx) {
     const i = list.indexOf(document.activeElement);
     list[i < 0 ? (d > 0 ? 0 : list.length - 1) : Math.max(0, Math.min(list.length - 1, i + d))].focus();
   }
-  const focusables = root => [...root.querySelectorAll('button, input, select, [tabindex]')].filter(shown);
+  const focusables = root => [...root.querySelectorAll('button, input, select, summary, a[href], [tabindex]')].filter(shown);
+  // To the nearest control in that direction; false when there is none.
+  function spatial(list, dx, dy) {
+    const c = document.activeElement;
+    if (!list.includes(c)) { list[0]?.focus(); return !!list[0]; }
+    const r = c.getBoundingClientRect();
+    let best = null, bestD = Infinity;
+    for (const t of list) {
+      if (t === c) continue;
+      const q = t.getBoundingClientRect();
+      if (dx > 0 ? q.left < r.right - 2 : dx < 0 ? q.right > r.left + 2 : dy > 0 ? q.top < r.bottom - 2 : q.bottom > r.top + 2) continue;
+      const x = Math.abs(q.left + q.width / 2 - r.left - r.width / 2), y = Math.abs(q.top + q.height / 2 - r.top - r.height / 2);
+      const d = dx ? x + y * 3 : y + x * 0.5;
+      if (d < bestD) { bestD = d; best = t; }
+    }
+    best?.focus();
+    return !!best;
+  }
 
   // ---------------------------------------------------------------- keys
   document.addEventListener('keydown', e => {
-    const k = e.key;
+    const k = e.key === 'Select' || e.key === 'Accept' ? 'Enter' : e.key;
     const isBack = BACK.has(k);
-    const typing = document.activeElement?.matches?.('input[type=text], input[type=search], input[type=password], input:not([type]), input[type=datetime-local]');
+    if (ARROWS.has(k)) document.body.classList.add('kbd');
+    const active = document.activeElement;
+    // A field reached with the arrows: OK (or a real keyboard) starts typing.
+    if (active?.dataset?.nav) {
+      if (k === 'Enter') { e.preventDefault(); return edit(active); }
+      if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) return edit(active);
+    }
+    const typing = active?.matches?.(TEXT) && !active.dataset.nav;
     if (k === 'Backspace' && typing) return;
 
     // "Starting now" notice: its buttons take the keys while one of them has the focus.
@@ -124,12 +193,26 @@ export function initRemote(ctx) {
     // Dialogs: move between their controls.
     const dlg = document.querySelector('dialog[open]');
     if (dlg) {
-      if (k === 'GoBack' || k === 'BrowserBack') { e.preventDefault(); dlg.close(); return; }
+      if (isBack && k !== 'Escape') { e.preventDefault(); dlg.close(); return; }
+      if (k === 'Enter' && active?.matches?.('input[type=checkbox]')) { e.preventDefault(); active.click(); return; }
+      if (k === 'Enter' && active?.matches?.('div[tabindex]')) { e.preventDefault(); active.click(); return; }
+      if (k === 'Enter' && active?.tagName === 'SELECT') { e.preventDefault(); try { active.showPicker(); } catch {} return; }
       if (!ARROWS.has(k)) return;
-      const inField = typing || document.activeElement?.tagName === 'SELECT';
+      const inField = typing || active?.tagName === 'SELECT';
       if (inField && (k === 'ArrowLeft' || k === 'ArrowRight')) return;
       e.preventDefault();
-      moveFocus(focusables(dlg), k === 'ArrowUp' || k === 'ArrowLeft' ? -1 : 1);
+      const dy = k === 'ArrowUp' ? -1 : k === 'ArrowDown' ? 1 : 0;
+      // Nothing further that way: scroll what is left of the text
+      if (!spatial(focusables(dlg), k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0, dy) && dy) dlg.querySelector('.card')?.scrollBy(0, dy * 120);
+      return;
+    }
+
+    // Login form.
+    const login = document.getElementById('login');
+    if (!login.hidden) {
+      if (!ARROWS.has(k) || (typing && (k === 'ArrowLeft' || k === 'ArrowRight'))) return;
+      e.preventDefault();
+      spatial(focusables(login), k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0, k === 'ArrowUp' ? -1 : k === 'ArrowDown' ? 1 : 0);
       return;
     }
 
@@ -137,39 +220,58 @@ export function initRemote(ctx) {
     if (player.isOpen) {
       player.wake();
       const menu = player.menu;
-      const bar = [...player.root.querySelectorAll('.pbar button, #pCu button, #pFail button, #pPlay')].filter(shown);
+      const failing = !player.failEl.hidden;
+      const bar = [...player.root.querySelectorAll(failing ? '#pFail button' : '#pCu button')].filter(shown);
       // Playback refused by the browser: any OK starts it (a key press counts as permission).
       if (player.blocked && (k === 'Enter' || k === ' ' || k === 'MediaPlayPause' || k === 'MediaPlay')) {
         e.preventDefault();
         player.unblock();
         return;
       }
-      const inBar = bar.includes(document.activeElement);
-      // Live: Left = channel list, Up/Down = pilot footer, OK = info / switch (see zap.js).
-      if (menu.hidden && (zap?.isOpen || !(inBar && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Enter'))) && zap?.key(k, isBack)) {
-        e.preventDefault();
-        if (bar.includes(document.activeElement)) document.activeElement.blur();
+      // Options, audio or subtitles panel (right side): Left or Back close it, OK is a normal click.
+      if (!menu.hidden) {
+        if (isBack || k === 'ArrowLeft') { e.preventDefault(); player.closeMenu(); }
+        else if (k === 'ArrowUp' || k === 'ArrowDown') { e.preventDefault(); moveFocus([...menu.querySelectorAll('button')], k === 'ArrowUp' ? -1 : 1); }
+        else if (k === 'ArrowRight') e.preventDefault();
         return;
       }
+      const inBar = bar.includes(document.activeElement);
+      // Live: channel list, pilot footer and OK (see zap.js).
+      if ((zap?.isOpen || !inBar) && zap?.key(k, isBack)) {
+        e.preventDefault();
+        return;
+      }
+      // On the buttons of the time bar or of the failure screen
+      if (inBar) {
+        if (isBack) { e.preventDefault(); document.activeElement.blur(); }
+        else if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); moveFocus(bar, k === 'ArrowLeft' ? -1 : 1); }
+        else if (k === 'ArrowUp' || k === 'ArrowDown') {
+          e.preventDefault();
+          if (failing) moveFocus(bar, k === 'ArrowUp' ? -1 : 1);
+          else if (k === 'ArrowUp') document.activeElement.blur();
+        }
+        return;
+      }
+      if (failing && ARROWS.has(k)) { e.preventDefault(); bar[0]?.focus(); return; }
       if (isBack) {
         e.preventDefault();
-        if (!menu.hidden) player.closeMenu();
-        else if (inBar) document.activeElement.blur();
-        else if (document.fullscreenElement && player.getSettings().autoFs === false) document.exitFullscreen?.();
+        if (document.fullscreenElement && player.getSettings().autoFs === false) document.exitFullscreen?.();
         else player.close();
-      } else if (!menu.hidden && (k === 'ArrowUp' || k === 'ArrowDown')) {
+      } else if (k === 'PageUp' || k === 'PageDown' || k === 'ChannelUp' || k === 'ChannelDown') {
         e.preventDefault();
-        moveFocus([...menu.querySelectorAll('button')], k === 'ArrowUp' ? -1 : 1);
-      } else if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'PageUp' || k === 'PageDown' || k === 'ChannelUp' || k === 'ChannelDown') {
+        player.step(k === 'PageUp' || k === 'ChannelUp' ? -1 : 1);
+      } else if (zap?.ctx.enabled()) {
+        if (k === 'ArrowRight') { e.preventDefault(); player.openOptions(); }
+      } else if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'MediaRewind' || k === 'MediaFastForward') {
         e.preventDefault();
-        if (inBar) document.activeElement.blur();
-        player.step(k === 'ArrowUp' || k === 'PageUp' || k === 'ChannelUp' ? -1 : 1);
-      } else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+        player.seekBy(k === 'ArrowLeft' || k === 'MediaRewind' ? -30 : 30);
+      } else if (k === 'ArrowDown') {
         e.preventDefault();
-        // Left on the first button leaves the bar (so the next Left opens the channel list).
-        if (k === 'ArrowLeft' && inBar && bar.indexOf(document.activeElement) === 0) document.activeElement.blur();
-        else moveFocus(bar, k === 'ArrowLeft' ? -1 : 1);
-      } else if ((k === 'Enter' || k === ' ' || k === 'MediaPlayPause') && !inBar && menu.hidden) {
+        (bar.find(b => b.id === 'cuPlay') || bar[0])?.focus();
+      } else if (k === 'ArrowUp') {
+        e.preventDefault();
+        player.openOptions();
+      } else if (k === 'Enter' || k === ' ' || k === 'MediaPlayPause') {
         e.preventDefault();
         const v = player.video;
         if (v.paused) v.play().catch(() => {}); else v.pause();
@@ -185,14 +287,12 @@ export function initRemote(ctx) {
       if ((k === 'ArrowLeft' || k === 'ArrowRight') && atEdge) {
         e.preventDefault();
         zone = 'top';
-        document.body.classList.add('kbd');
         moveFocus(topButtons(), k === 'ArrowLeft' ? -1 : 1);
         return;
       }
-      const el2 = document.activeElement;
-      if (k === 'ArrowDown' && !el2.value && !recent.hidden) { e.preventDefault(); focusables(recent)[0]?.focus(); }
-      else if (k === 'Enter' || k === 'ArrowDown') { e.preventDefault(); el2.blur(); setZone(home() || itemList.items.length ? 'items' : 'folders'); }
-      else if (k === 'Escape') document.activeElement.blur();
+      if (k === 'ArrowDown' && !el.value && !recent.hidden) { e.preventDefault(); focusables(recent)[0]?.focus(); }
+      else if (k === 'Enter' || k === 'ArrowDown') { e.preventDefault(); el.blur(); setZone(home() || itemList.items.length ? 'items' : 'folders'); }
+      else if (k === 'ArrowUp' || isBack) { e.preventDefault(); zone = 'top'; stopEdit(el); }
       return;
     }
 
@@ -208,16 +308,19 @@ export function initRemote(ctx) {
     if (zone === 'items' && home() && isBack) {
       e.preventDefault();
       setZone('top');
-      topButtons()[0]?.focus();
+      focusTab();
       return;
     }
     e.preventDefault();
 
     if (zone === 'top') {
-      const btns = topButtons();
-      if (k === 'ArrowLeft' || k === 'ArrowRight') moveFocus(btns, k === 'ArrowLeft' ? -1 : 1);
-      else if (k === 'ArrowDown') setZone(document.activeElement?.closest('.pane-head') ? 'items' : 'folders');
-      else if (k === 'Enter') { const a = document.activeElement; if (a?.tagName === 'INPUT') a.focus(); else a?.click(); }
+      const inHead = !!document.activeElement?.closest('.pane-head');
+      if (k === 'ArrowLeft' || k === 'ArrowRight') moveFocus(inHead ? headButtons() : topButtons(), k === 'ArrowLeft' ? -1 : 1);
+      else if (k === 'ArrowUp') { if (inHead) focusTab(); }
+      else if (k === 'ArrowDown') {
+        if (!inHead && !home() && headButtons().length && ctx.narrow()) headButtons()[0].focus();
+        else setZone(inHead ? 'items' : 'folders');
+      } else if (k === 'Enter') document.activeElement?.click();
       else if (isBack) setZone('folders');
       return;
     }
@@ -226,7 +329,7 @@ export function initRemote(ctx) {
       const n = folderList.items.length;
       const i = folderList.cursor ?? 0;
       if (k === 'ArrowDown') folderList.setCursor(Math.min(n - 1, i + 1));
-      else if (k === 'ArrowUp') { if (i === 0) { setZone('top'); topButtons()[0]?.focus(); } else folderList.setCursor(i - 1); }
+      else if (k === 'ArrowUp') { if (i === 0) { setZone('top'); focusTab(); } else folderList.setCursor(i - 1); }
       else if (k === 'ArrowRight') setZone('items');
       else if (k === 'Enter') {
         ctx.openFolder(i);
@@ -248,14 +351,14 @@ export function initRemote(ctx) {
       if (k === 'Enter') curTile()?.click();
       else if (!moveTile(k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0, k === 'ArrowUp' ? -1 : k === 'ArrowDown' ? 1 : 0)) {
         if (k === 'ArrowLeft') { if (ctx.narrow()) ctx.showFolders(); setZone('folders'); }
-        else if (k === 'ArrowUp') { setZone('top'); ([...document.querySelectorAll('.pane-head button')].filter(shown).pop() || topButtons()[0])?.focus(); }
+        else if (k === 'ArrowUp') goUp();
       }
       return;
     }
     if (m === 'series') {
       const els = focusables(ctx.seriesEl);
       if (k === 'ArrowLeft' && !document.activeElement?.closest('.chips')) { ctx.closeSeries(); setZone('items'); }
-      else if (k === 'ArrowUp' && els.indexOf(document.activeElement) <= 0) { setZone('top'); [...document.querySelectorAll('.pane-head button')].filter(shown)[0]?.focus(); }
+      else if (k === 'ArrowUp' && els.indexOf(document.activeElement) <= 0) goUp();
       else if (k === 'ArrowUp' || k === 'ArrowLeft') moveFocus(els, -1);
       else if (k === 'ArrowDown' || k === 'ArrowRight') moveFocus(els, 1);
       else if (k === 'Enter') document.activeElement?.click();
@@ -264,11 +367,12 @@ export function initRemote(ctx) {
     // list
     const n = itemList.items.length;
     const i = itemList.cursor ?? 0;
-    if (k === 'ArrowDown') { act = -1; itemList.setCursor(Math.min(n - 1, i + 1)); }
+    if (k === 'ArrowDown') { act = -1; itemList.setCursor(rowFrom(i + 1, 1) ?? i); }
     else if (k === 'ArrowUp') {
       act = -1;
-      if (i === 0) { setZone('top'); [...document.querySelectorAll('.pane-head button')].filter(shown).pop()?.focus() || topButtons()[0]?.focus(); }
-      else itemList.setCursor(i - 1);
+      const j = rowFrom(i - 1, -1);
+      if (j == null) goUp();
+      else itemList.setCursor(j);
     } else if (k === 'ArrowRight') { const a = rowActs(); if (act < a.length - 1) act++; }
     else if (k === 'ArrowLeft') {
       if (act >= 0) act--;
@@ -282,7 +386,12 @@ export function initRemote(ctx) {
   });
 
   // Touch or mouse: back to the normal look.
-  document.addEventListener('pointerdown', () => { if (zone) setZone(null); }, true);
+  document.addEventListener('pointerdown', () => {
+    document.body.classList.remove('kbd');
+    const a = document.activeElement;
+    if (a?.dataset?.nav) { delete a.dataset.nav; a.readOnly = false; }
+    if (zone) setZone(null);
+  }, true);
 
   // Lists re-rendered by the app (new folder, search…): keep the cursor valid.
   return {
