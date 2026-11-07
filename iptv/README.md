@@ -68,7 +68,7 @@ En el Tesla, el vídeo solo se reproduce con el coche en *Park*.
 
 [`recorder/recorder.py`](recorder/recorder.py) convierte una Raspberry Pi, o cualquier Linux encendido en casa, en un grabador. Con él puedes:
 
-- **Grabar** programas y partidos en un disco USB aunque no haya nada más encendido. Si un canal se corta, pasa a los canales de respaldo. Se puede ver una grabación desde el principio mientras se está grabando. La app avisa de los cortes de las grabaciones.
+- **Grabar** programas y partidos en un disco USB aunque no haya nada más encendido. Si un canal se corta o se queda sin sonido, pasa a los canales de respaldo. Se puede ver una grabación desde el principio mientras se está grabando. La app avisa de los cortes de las grabaciones.
 - **Sincronizar** favoritos, equipos, avisos, «Seguir viendo» y ajustes entre todos los dispositivos que abran la app desde la Pi.
 
 Solo funciona abriendo la app desde la Pi, en la red de casa (`http://<ip-de-la-pi>:8090`). Desde `https://lusob.github.io` el navegador bloquea las llamadas a un equipo `http://` de la red local.

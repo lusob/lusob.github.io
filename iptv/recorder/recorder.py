@@ -201,6 +201,19 @@ def renumber(acc, sources):
     return n
 
 
+MUTE_SEGS = 4         # finished segments in a row without sound (≈ 24 s) → treated as a cut
+
+
+def has_audio(path):
+    """Whether a segment carries any sound (a channel may keep sending only the picture)."""
+    try:
+        out = subprocess.run([args.ffmpeg.replace('ffmpeg', 'ffprobe'), '-v', 'error', '-select_streams', 'a', '-show_entries', 'packet=pts_time',
+                              '-read_intervals', '%+#1', '-of', 'csv=p=0', path], capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return True   # can't tell: don't cut the recording for it
+    return bool(out.strip())
+
+
 def segments(part_dir):
     """[(duration, filename)] from a part's ffmpeg playlist."""
     out, dur = [], None
@@ -327,6 +340,7 @@ class Worker(threading.Thread):
         self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err)
         started = last_change = time.time()
         last_count, reason = 0, ''
+        had_audio, mute = False, 0
         while True:
             if self.proc.poll() is not None:
                 reason = f'el canal se cortó (ffmpeg salió con {self.proc.returncode})'
@@ -334,10 +348,20 @@ class Worker(threading.Thread):
             if self.stop_flag.is_set() or time.time() >= rec['end']:
                 reason = ''
                 break
-            count = len(segments(pdir))
+            segs = segments(pdir)
+            count = len(segs)
             now = time.time()
             if count != last_count:
                 last_count, last_change = count, now
+                # The source may go on sending the picture without sound: players then stall
+                # there for good (they only count as loaded what has both). Like a cut.
+                if count >= 2:
+                    sound = has_audio(os.path.join(pdir, segs[-2][1]))
+                    had_audio = had_audio or sound
+                    mute = 0 if sound else mute + 1
+                    if had_audio and mute >= MUTE_SEGS:
+                        reason = 'el canal se quedó sin sonido'
+                        break
             elif now - last_change > (FIRST_DATA if count == 0 else STALL):
                 reason = 'sin datos nuevos' if count else 'no llega imagen'
                 break
