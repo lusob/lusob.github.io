@@ -122,9 +122,12 @@ export function initRemote(ctx) {
       if (t === c) continue;
       const q = t.getBoundingClientRect();
       const x = q.left + q.width / 2 - cx, y = q.top + q.height / 2 - cy;
-      if ((dx && Math.sign(x) !== dx) || (dy && Math.sign(y) !== dy)) continue;
+      // Really that way (a focused card is scaled up: its centre is off by a hair, and the
+      // cards of its own row looked "above" it)
+      if ((dx && x * dx < r.width / 3) || (dy && y * dy < r.height / 3)) continue;
       if (dx && Math.abs(y) > r.height / 2) continue;      // same row
-      const d = dx ? Math.abs(x) : Math.abs(y) * 10 + Math.abs(x);
+      // From a full-width card (the hero) down to the first card of the row, not the middle one
+      const d = dx ? Math.abs(x) : Math.abs(y) * 10 + (r.width > innerWidth * 0.6 ? Math.abs(q.left - r.left) : Math.abs(x));
       if (d < bestD) { bestD = d; best = t; }
     }
     if (!best) return false;

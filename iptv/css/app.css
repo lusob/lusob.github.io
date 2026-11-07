@@ -765,3 +765,9 @@ body.kbd .pbar button { display: none; }
   .actions { flex-direction: column; }
   .card { padding: 20px 16px; }
 }
+
+/* Minimal: content first, secondary actions fade until the row is selected */
+.h-sec h3 { font-size: 19px; font-weight: 700; letter-spacing: .01em; }
+.row .gbtn, .row .star:not(.on) { opacity: .35; }
+.vl-row.kfocus .row .gbtn, .vl-row.kfocus .row .star, .row:hover .gbtn, .row:hover .star { opacity: 1; }
+#recBanner { border-radius: 999px; padding: 0 16px; }

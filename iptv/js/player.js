@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261104a';
+import { startEngine, resetVideo } from './engines.js?v=20261107a';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -882,7 +882,9 @@ export class Player {
     this.audioBtn.hidden = audio.length < 2;
     this.subsBtn.hidden = !subs.length;
     this.subsBtn.classList.toggle('on', subs.some(t => t.active));
-    if (!this.menu.hidden) this.openMenu(this.menu.dataset.kind);
+    // An open audio / subtitles list follows the new tracks (not Opciones or other menus)
+    const kind = this.menu.dataset.kind;
+    if (!this.menu.hidden && (kind === 'audio' || kind === 'subs')) this.openMenu(kind);
   }
 
   openMenu(kind) {

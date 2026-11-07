@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261104a';
-import * as store from './store.js?v=20261104a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261104a';
-import { Player } from './player.js?v=20261104a';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261104a';
-import { Grid } from './grid.js?v=20261104a';
-import { Mosaic } from './mosaic.js?v=20261104a';
-import { initRemote } from './remote.js?v=20261104a';
-import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261104a';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261104a';
-import { Zapper } from './zap.js?v=20261104a';
-import { initTouch } from './touch.js?v=20261104a';
-import { initSync } from './sync.js?v=20261104a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261107a';
+import * as store from './store.js?v=20261107a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261107a';
+import { Player } from './player.js?v=20261107a';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261107a';
+import { Grid } from './grid.js?v=20261107a';
+import { Mosaic } from './mosaic.js?v=20261107a';
+import { initRemote } from './remote.js?v=20261107a';
+import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261107a';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261107a';
+import { Zapper } from './zap.js?v=20261107a';
+import { initTouch } from './touch.js?v=20261107a';
+import { initSync } from './sync.js?v=20261107a';
 
-const VERSION = '2026-11-04a';
+const VERSION = '2026-11-07a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -1259,36 +1259,28 @@ function renderHome() {
   // Favourite channels
   if (d) {
     const favItems = favList('live');
-    sec('fav', '★ Tus canales favoritos', favItems.length
-      ? favItems.slice(0, 30).map((it, i) => chanCard(it, 'f:' + it.id, () => confirmBusy().then(ok => { if (ok) openLive(favItems, i, 'Favoritos', FAV); })))
-      : [card('fav-hint', () => selectTab('live'), 'hint', '<span class="hc-body"><span class="hc-name">Aún no tienes favoritos</span><span class="hc-sub dim">Pulsa ★ en un canal de Directo para tenerlo aquí</span></span>')]);
+    sec('fav', 'Tus canales', favItems.slice(0, 30).map((it, i) => chanCard(it, 'f:' + it.id, () => confirmBusy().then(ok => { if (ok) openLive(favItems, i, 'Favoritos', FAV); }))));
   }
 
   // Matches
   const upcoming = agenda.events.filter(e => e.end > now && sportShown(e));
   const mine = teams.length ? upcoming.filter(isMine).slice(0, 12) : [];
-  if (teams.length) {
-    sec('teams', '★ Tus equipos', mine.length ? mine.map(e => eventCard(e, 'te:' + e.id))
-      : [card('teams-none', () => editTeams(), 'hint', `<span class="hc-body"><span class="hc-name">Sin partidos próximos</span><span class="hc-sub dim">${esc(teams.slice(0, 3).join(', '))}${teams.length > 3 ? '…' : ''}</span></span>`)],
-    { label: 'Elegir equipos', fn: () => editTeams() });
-  }
+  // Only content: no rows of hints (teams are chosen in Ajustes → Mis equipos)
+  sec('teams', 'Tus equipos', mine.map(e => eventCard(e, 'te:' + e.id)), { label: 'Elegir equipos', fn: () => editTeams() });
   const shown = new Set(mine);
   const endOfDay = new Date().setHours(23, 59, 59, 999) / 1000;
   const today = upcoming.filter(e => !shown.has(e) && e.t < endOfDay && playable(e)).slice(0, 15);
   sec('today', 'Partidos de hoy', today.map(e => eventCard(e, 'ev:' + e.id)), { label: 'Ver la agenda', fn: () => selectTab('agenda') });
-  if (!teams.length && agenda.events.length) {
-    sec('teams', '★ Tus equipos', [card('teams-hint', () => editTeams(), 'hint', '<span class="hc-body"><span class="hc-name">Sigue a tus equipos</span><span class="hc-sub dim">Sus partidos saldrán aquí primero (y se pueden grabar solos). Pulsa para elegirlos.</span></span>')]);
-  }
 
   // Recordings
   if (recorder) {
     const rs = sortedRecs().slice(0, 12);
-    sec('recs', '⏺ Grabaciones', rs.map(r => recCard(r, 'r:' + r.id, hist.find(h => h.k === 'rec' && h.id === r.id)?.pos)), { label: 'Todas las grabaciones', fn: () => { ui.folder.live = REC; selectTab('live'); } });
+    sec('recs', 'Grabaciones', rs.map(r => recCard(r, 'r:' + r.id, hist.find(h => h.k === 'rec' && h.id === r.id)?.pos)), { label: 'Todas las grabaciones', fn: () => { ui.folder.live = REC; selectTab('live'); } });
   }
 
   // Reminders
   const rem = reminders.filter(r => r.t > now - 1800).sort((a, b) => a.t - b.t);
-  sec('remind', '🔔 Avisos', rem.map(r => card('rm:' + r.id, () => showMenu(r.title, `${esc(r.sub || '')} · ${esc(dayLabel(r.t))} ${hhmm(r.t)}`, [{ label: '🔕 Quitar el aviso', fn: () => removeReminder(r.id) }]), 'rem',
+  sec('remind', 'Avisos', rem.map(r => card('rm:' + r.id, () => showMenu(r.title, `${esc(r.sub || '')} · ${esc(dayLabel(r.t))} ${hhmm(r.t)}`, [{ label: '🔕 Quitar el aviso', fn: () => removeReminder(r.id) }]), 'rem',
     `<span class="hc-body"><span class="hc-tag">${esc(dayLabel(r.t))} ${hhmm(r.t)}</span><span class="hc-name">${esc(r.title)}</span><span class="hc-sub dim">${esc(r.sub || '')}</span></span>`)));
 
   el.innerHTML = secs.join('') || '<div class="empty-note">Nada que mostrar todavía.</div>';
@@ -2306,7 +2298,7 @@ function updateRecBanner() {
   const r = activeRec();
   const b = $('#recBanner');
   b.hidden = !r;
-  if (r) b.textContent = `● Grabando «${r.title}» hasta las ${hhmm(r.end)} · no veas otros canales hasta entonces`;
+  if (r) b.textContent = `● Grabando «${r.title}» · hasta las ${hhmm(r.end)}`;
 }
 $('#recBanner').addEventListener('click', () => { const r = activeRec(); if (r) playPiRec(r); });
 
@@ -2866,6 +2858,25 @@ async function editTeams() {
   });
 }
 $('#teamsBtn').addEventListener('click', editTeams);
+
+// Ajustes → Actualizar listas: channels (films and series too when shown), agenda and recordings.
+$('#reloadBtn').addEventListener('click', async () => {
+  $('#settings').close();
+  loading('Actualizando listas…');
+  seriesCache.clear();
+  epg?.clear();
+  closeSeries();
+  mosaic.hide();
+  mosaic.source = null;
+  try {
+    await Promise.all([ensureData('live', true), agenda.load(true), recorder ? loadPiRecs() : null,
+      ...(settings.vod ? ['vod', 'series'].filter(t => data[t]).map(t => ensureData(t, true)) : [])]);
+  } finally { loading(''); }
+  eventChanCache.clear();
+  shownCache = null;
+  selectTab(ui.tab);
+  toast('Listas actualizadas', 2000);
+});
 
 // Empty «Continue watching» (a second press confirms it)
 let histArmed;
