@@ -5,7 +5,7 @@
 const MAX = 40;   // every version: they are tried one after another until one works
 const QUALITY = new Set(['uhd', '4k', 'fhd', 'fullhd', 'hd', 'sd', 'hevc', 'h265', 'h264', 'x265', 'x264', 'fh', 'hq', 'lq',
   '1080', '1080p', '1080i', '720', '720p', '2160', '2160p', '50fps', '60fps', '25fps', 'fps', 'raw', 'vip', 'backup', 'bk', 'alt',
-  'multi', 'multiaudio', 'dual', 'ott', 'hdr', 'sdr', 'low', 'high', 'tv', 'solo', 'eventos', 'fibra', 'ppv', 'avatel', 'test', 'gp']);
+  'multi', 'multiaudio', 'dual', 'ott', 'hdr', 'sdr', 'low', 'high', 'tv', 'solo', 'eventos', 'fibra', 'ppv', 'avatel', 'test', 'gp', 'rec']);
 const BRAND = new Set(['movistar', 'movi', 'mov', 'm', 'plus', 'mplus']);
 const DIGITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
 const COUNTRY = new Set(['es', 'esp', 'spa', 'spain', 'espana']);
@@ -50,9 +50,9 @@ export function channelKey(name) {
 // Preferred order: Full HD, HD, untagged, 4K, HEVC (not every browser decodes it), SD.
 function rank(name) {
   const w = new Set(words(name).flatMap(x => x.split(/(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])/)));
+  if (w.has('uhd') || w.has('4k') || w.has('2160') || w.has('2160p')) return 3;
   if (w.has('hevc') || w.has('h265') || w.has('x265')) return 4;
   if (w.has('fhd') || w.has('fullhd') || w.has('1080') || w.has('1080p') || (w.has('fh') && !w.has('sd'))) return 0;
-  if (w.has('uhd') || w.has('4k') || w.has('2160') || w.has('2160p')) return 3;
   if (w.has('hd') || w.has('720') || w.has('720p')) return 1;
   if (w.has('sd') || w.has('lq') || w.has('low')) return 5;
   return 2;
@@ -60,9 +60,10 @@ function rank(name) {
 
 const cache = { items: null, n: 0, index: null };
 
-// SD versions last; otherwise most recently added first (dead copies tend to be the old ones), then by quality.
-const isSd = it => rank(it.name) === 5;
-const newest = (a, b) => isSd(a) - isSd(b) || (b.added || 0) - (a.added || 0) || rank(a.name) - rank(b.name) || a.name.localeCompare(b.name);
+// SD versions, then 4K ones last (4K arrives well behind the others and few TVs need it); otherwise
+// most recently added first (dead copies tend to be the old ones), then by quality.
+const tier = it => ({ 5: 1, 3: 2 })[rank(it.name)] || 0;
+const newest = (a, b) => tier(a) - tier(b) || (b.added || 0) - (a.added || 0) || rank(a.name) - rank(b.name) || a.name.localeCompare(b.name);
 
 // channelKey → versions of that channel, newest first.
 function index(items) {

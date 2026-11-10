@@ -2,7 +2,7 @@
 // folders (now & next, days, sports) and a chronological list. Each event's channels are matched
 // with the live list so a press plays the broadcast.
 
-import { esc } from './ui.js?v=20261107a';
+import { esc } from './ui.js?v=20261110a';
 
 export const NOW = 'ag:now', DAY = 'ag:day:', SPORT = 'ag:sport:', MINE = 'ag:mine', COMPS = 'ag:comps', COMP = 'ag:comp:';
 
@@ -34,13 +34,18 @@ export function cleanChannel(name) {
     .replace(/\bprimera\s+federaci[oó]n\b/i, 'M+ REF Federacion')
     .replace(/\s+-\s+.*$/, '')                                   // "Tennis Channel - Orange TV"
     .replace(/\b(la)\s+(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b/i, (_, a, n) => `${a} ${NUMBERS[n.toLowerCase()]}`)
+    .replace(/\b(la\s+[12])\s+tve\b/i, '$1')                     // "La 1 TVE"
     .replace(/\s+/g, ' ').trim();
 }
 
 // Looser names to try when the exact one is not in the list: without "Bar" (the same feed for
 // bars), "Web" / "Play" / "YouTube" / "App" (the channel's own site).
+// Streaming services, not TV channels: "HBO MAX" must not end up on "TV Max".
+const STREAMING = /^(hbo\s*max|max|disney\s*\+?|netflix|prime\s+video|apple\s+tv\+?|nba\s+league\s+pass)$/i;
+
 export function channelVariants(name) {
   const c = cleanChannel(name);
+  if (STREAMING.test(c)) return [];
   const out = [c];
   const add = s => { s = s.replace(/\s+/g, ' ').trim(); if (s && !out.includes(s)) out.push(s); };
   add(c.replace(/\bbar\b/ig, ''));

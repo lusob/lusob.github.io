@@ -48,7 +48,7 @@ Ten en cuenta:
   - la guía de los canales españoles se actualiza cada día de forma automática;
   - en **Ajustes** se puede desactivar.
 - **Agenda deportiva**: partidos de los próximos días con los canales que los emiten. Puedes seguir a tus equipos, pedir un aviso al empezar o grabarlos.
-- **Canales de respaldo**: si un canal se corta, la app pasa sola a otra versión del mismo (FHD, HD, SD…).
+- **Canales de respaldo**: si un canal se corta, la app pasa sola a otra versión del mismo (FHD, HD, SD y, al final, 4K, que suele ir con más retraso). En Opciones se ve qué versión se está emitiendo, y desde ahí puedes quedarte en ella, añadirla a favoritos, ver su guía o abrir su carpeta.
 - **Listas de canales**: se guardan 12 h y se pueden actualizar en cualquier momento desde Ajustes → Actualizar listas. Si un canal no funciona con ninguna de sus versiones, la app vuelve a descargar la lista, porque los proveedores a veces cambian los canales antes de un evento importante, y reintenta con los canales nuevos. El grabador hace lo mismo.
 - **Zapping**: con ▲▼ del mando o deslizando el dedo. El piloto inferior muestra el programa, y «+ info» la sinopsis.
 - **Mosaico**: vista previa de varios canales con una sola conexión.

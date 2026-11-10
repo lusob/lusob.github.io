@@ -1,18 +1,18 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261107a';
-import * as store from './store.js?v=20261107a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261107a';
-import { Player } from './player.js?v=20261107a';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261107a';
-import { Grid } from './grid.js?v=20261107a';
-import { Mosaic } from './mosaic.js?v=20261107a';
-import { initRemote } from './remote.js?v=20261107a';
-import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261107a';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261107a';
-import { Zapper } from './zap.js?v=20261107a';
-import { initTouch } from './touch.js?v=20261107a';
-import { initSync } from './sync.js?v=20261107a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261110a';
+import * as store from './store.js?v=20261110a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261110a';
+import { Player } from './player.js?v=20261110a';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261110a';
+import { Grid } from './grid.js?v=20261110a';
+import { Mosaic } from './mosaic.js?v=20261110a';
+import { initRemote } from './remote.js?v=20261110a';
+import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261110a';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261110a';
+import { Zapper } from './zap.js?v=20261110a';
+import { initTouch } from './touch.js?v=20261110a';
+import { initSync } from './sync.js?v=20261110a';
 
-const VERSION = '2026-11-07a';
+const VERSION = '2026-11-10a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
@@ -1916,6 +1916,21 @@ $('#pStart').addEventListener('click', () => {
   if (now) playCatchup(it, now);
 });
 $('#pGuide').addEventListener('click', () => openGuide(player.current));
+
+// Playing a backup channel (Opciones): stay on it as the channel, its favourite, guide and folder.
+player.backupEntries = s => {
+  const ch = liveById(s.id), d = data.live;
+  if (!ch) return [];
+  const f = ch.cats.map(c => d.folderById.get(c)).find(f => f && folderShown('live', f)) || d.folderById.get(ch.cats[0]);
+  const inFolder = async () => { const list = f ? await zapItems(f.id) : []; const at = list.findIndex(x => x.id === ch.id); return at < 0 ? { list: [ch], at: 0 } : { list, at }; };
+  const fav = favCtl('live'), on = fav.has(ch);
+  return [
+    { label: `▶ Quedarse en ${ch.name}`, fn: async () => { const { list, at } = await inFolder(); openLive(list, at, f?.name || ch.name, f?.id); } },
+    { label: on ? `★ Quitar ${ch.name} de favoritos` : `☆ Añadir ${ch.name} a favoritos`, fn: () => { fav.toggle(ch); player.openOptions(); } },
+    { label: `≡ Guía de ${ch.name}`, fn: () => openGuide(ch) },
+    ...(f ? [{ label: `▤ Su carpeta: ${f.name}`, fn: async () => { const { list, at } = await inFolder(); zap.folderId = f.id; zap.showChans(list, f.name, at); } }] : []),
+  ];
+};
 $('#pBackup').addEventListener('click', () => editBackups(player.current));
 
 const DAY = 86400;

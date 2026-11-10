@@ -7,7 +7,7 @@
 // watchdog that reconnects when playback freezes, and an adaptive buffer that grows
 // (up to the configured maximum) when playback keeps cutting out.
 
-import { startEngine, resetVideo } from './engines.js?v=20261107a';
+import { startEngine, resetVideo } from './engines.js?v=20261110a';
 
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ROUNDS = 3;            // passes over all engines before giving up on the first load
@@ -328,9 +328,11 @@ export class Player {
   // Every action of the player in one panel (right side), for the remote and for small screens:
   // the top bar only keeps the essentials. Taken from its buttons, so it is always up to date.
   openOptions() {
+    const s = this.sources[this.src], onBackup = this.src > 0 && this.live && !this.cu;
+    const orig = onBackup ? ` ${this.current.name}` : '';   // on a backup: say which channel each one is about
     const OPT = {
-      pLast: b => `⇆ ${b.title || 'Canal anterior'}`, pStart: () => '⏮ Ver desde el inicio', pRec: b => b.textContent.trim(), pGuide: () => '≡ Guía del canal',
-      pAlt: b => b.textContent.trim(), pBackup: () => '⇄ Canales de respaldo', pFav: b => b.classList.contains('on') ? '★ Quitar de favoritos' : '☆ Añadir a favoritos',
+      pLast: b => `⇆ ${b.title || 'Canal anterior'}`, pStart: () => '⏮ Ver desde el inicio', pRec: b => b.textContent.trim(), pGuide: () => onBackup ? `≡ Guía de${orig}` : '≡ Guía del canal',
+      pAlt: b => b.textContent.trim(), pBackup: () => '⇄ Canales de respaldo', pFav: b => b.classList.contains('on') ? `★ Quitar${orig} de favoritos` : `☆ Añadir${orig} a favoritos`,
       pAudio: () => '♪ Audio', pSubs: () => '▭ Subtítulos', pPrev: () => '‹ Anterior', pNext: () => '› Siguiente',
       pZoom: b => `⤢ Encuadre: ${b.textContent.trim()}`, pClose: () => '✕ Salir',
     };
@@ -339,7 +341,9 @@ export class Player {
       if (!b || b.hidden || b.disabled || (this.live && (id === 'pPrev' || id === 'pNext'))) return [];
       return [{ label: label(b), fn: () => b.click() }];
     });
-    this.showMenu('Opciones', entries);
+    // On a backup channel: that channel's own actions first (it is a channel of the list too).
+    if (onBackup) entries.unshift(...(this.backupEntries?.(s) || []));
+    this.showMenu(onBackup ? `Opciones · respaldo: ${s.name}` : 'Opciones', entries);
   }
 
   seekBy(s) {
@@ -436,8 +440,9 @@ export class Player {
     const max = Math.max(base, +s.bufferMax || 60);
     // Starts with what earlier sessions learned (frequent cuts), not from scratch every time.
     // Each live channel learns its own (the cuts usually come from that channel's server, so a bad
-    // one must not delay the others); recordings / films share one (the home Wi-Fi).
-    const key = this.live ? 'ch:' + (this.current?.id ?? '') : 'vod';
+    // one must not delay the others; a backup channel starts again from its own, not from the
+    // buffer grown on the channel that failed); recordings / films share one (the home Wi-Fi).
+    const key = this.live ? 'ch:' + (this.sources?.[this.src]?.id ?? this.current?.id ?? '') : 'vod';
     if (this.eff == null || this.effBase !== base || this.effKey !== key) {
       this.eff = Math.max(base, Math.min(max, +(s.bufLearnedBy || {})[key] || 0));
       this.effBase = base;
@@ -720,6 +725,7 @@ export class Player {
     if (this.cu) this.cu.base = this.cuPos();
     this.switches++;
     this.src = (this.src + 1) % n;
+    this.lastStall = 0;
     this.resetCounters();
     this.prepare();
     const label = `${reason ? reason + ' ' : ''}Probando versión ${this.src + 1}/${n}: ${this.sources[this.src].name}…`;
