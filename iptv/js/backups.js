@@ -10,6 +10,9 @@ const BRAND = new Set(['movistar', 'movi', 'mov', 'm', 'plus', 'mplus']);
 const DIGITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
 const COUNTRY = new Set(['es', 'esp', 'spa', 'spain', 'espana']);
 
+// "ab12cd" → ["ab", "12", "cd"]
+const splitNum = w => w.replace(/([a-z])(\d)/g, '$1 $2').replace(/(\d)([a-z])/g, '$1 $2').split(' ');
+
 const lower = name => String(name).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 function words(name) {
@@ -38,7 +41,7 @@ const respell = name => SPELLINGS.reduce((t, [re, to]) => t.replace(re, to), low
 export function channelKey(name) {
   const keep = w => !QUALITY.has(w) && !BRAND.has(w) && !COUNTRY.has(w);
   const all = words(respell(name));
-  const toks = all.filter(keep).flatMap(w => w.split(/(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])/)).filter(keep);
+  const toks = all.filter(keep).flatMap(splitNum).filter(keep);
   // Nothing but the brand ("Movistar Plus+", "M+ Plus", "M+ 2"): the Movistar Plus+ channel itself
   if (!toks.some(w => /[a-z]/.test(w)) && all.some(w => BRAND.has(w))) toks.unshift('movistarplus');
   if (!toks.length) return '';
@@ -49,7 +52,7 @@ export function channelKey(name) {
 
 // Preferred order: Full HD, HD, untagged, 4K, HEVC (not every browser decodes it), SD.
 function rank(name) {
-  const w = new Set(words(name).flatMap(x => x.split(/(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])/)));
+  const w = new Set(words(name).flatMap(splitNum));
   if (w.has('uhd') || w.has('4k') || w.has('2160') || w.has('2160p')) return 3;
   if (w.has('hevc') || w.has('h265') || w.has('x265')) return 4;
   if (w.has('fhd') || w.has('fullhd') || w.has('1080') || w.has('1080p') || (w.has('fh') && !w.has('sd'))) return 0;

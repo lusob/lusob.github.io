@@ -1,0 +1,26 @@
+/* Old browsers only (Firefox 68 on Android 4.4), loaded by index.html with js/legacy.js: what app.css
+   uses and they lack (<dialog>, min(), aspect-ratio, fit-content). */
+
+/* <dialog> (see tools/legacy/polyfills.js) */
+dialog:not([open]) { display: none; }
+dialog[open] { display: block; position: fixed; left: 0; right: 0; top: 50%; bottom: auto; transform: translateY(-50%);
+  margin: 0 auto; width: -moz-fit-content; max-width: calc(100vw - 24px); max-height: calc(100vh - 16px); overflow: auto; }
+.dlg-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(4, 7, 12, .72); }
+
+/* min(a, b) → width a, max-width b */
+.card { width: 460px; max-width: 100%; }
+.card.wide { width: 760px; max-width: 100%; }
+#zap { width: 460px; max-width: 88vw; }
+#pMenu { width: 400px; max-width: 88vw; }
+#pFail { width: 720px; max-width: 92vw; }
+.hero-txt { width: 560px; max-width: 70%; }
+.hcard.hero { height: 42vh; max-height: 380px; }
+#menuDialog.sheet .card { width: 620px; max-width: calc(100vw - 24px); }
+
+/* aspect-ratio: 16 / 9 */
+.hc-art, .menu-art { height: 0; padding-top: 56.25%; }
+#pilot .pl-art { height: 72px; }
+.g-img { height: 54px; }
+
+/* Firefox marks empty required fields in red until they are filled */
+:-moz-ui-invalid { box-shadow: none; }

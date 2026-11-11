@@ -1,24 +1,25 @@
-import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261110a';
-import * as store from './store.js?v=20261110a';
-import { $, esc, norm, ago, isNew, initials, toast, loading, VList } from './ui.js?v=20261110a';
-import { Player } from './player.js?v=20261110a';
-import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261110a';
-import { Grid } from './grid.js?v=20261110a';
-import { Mosaic } from './mosaic.js?v=20261110a';
-import { initRemote } from './remote.js?v=20261110a';
-import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261110a';
-import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261110a';
-import { Zapper } from './zap.js?v=20261110a';
-import { initTouch } from './touch.js?v=20261110a';
-import { initSync } from './sync.js?v=20261110a';
+import { Xtream, parseServerInput, isMixedContent } from './xtream.js?v=20261111a';
+import * as store from './store.js?v=20261111a';
+import { $, esc, norm, ago, isNew, initials, toast, loading, VList, unicodeRe } from './ui.js?v=20261111a';
+import { Player } from './player.js?v=20261111a';
+import { Epg, hhmm, artUrl, MATCH_EARLY } from './epg.js?v=20261111a';
+import { Grid } from './grid.js?v=20261111a';
+import { Mosaic } from './mosaic.js?v=20261111a';
+import { initRemote } from './remote.js?v=20261111a';
+import { channelKey, autoBackups, groupVersions, sportsChannels, SPORTS, findChannels, isForeign } from './backups.js?v=20261111a';
+import { Agenda, eventRow, channelVariants, matchTitle, crest, icon, elapsed, hhmmOf, dayOf, NOW as AG_NOW, DAY as AG_DAY, MINE as AG_MINE, COMPS as AG_COMPS } from './agenda.js?v=20261111a';
+import { Zapper } from './zap.js?v=20261111a';
+import { initTouch } from './touch.js?v=20261111a';
+import { initSync } from './sync.js?v=20261111a';
 
-const VERSION = '2026-11-10a';
+const VERSION = '2026-11-11a';
 const TYPES = { live: 'Directo', vod: 'Películas', series: 'Series' };
 const FAV = '__fav', ALL = '__all', REC = '__rec', SPORT = '__sport';
 const isSport = id => id === SPORT || String(id).startsWith('sport:');
 const PAD_START = 120, PAD_END = 900;   // catch-up margins (s): matches start late and run over
 const MAX_AGE = 12 * 3600e3;   // refetch lists older than 12 h
-const ADULT_RE = /(^|[^\p{L}])(adult[oa]?s?|xxx|porn\p{L}*|er[oó]tic\p{L}*|hentai)(?!\p{L})|18\s*\+|\+\s*18/iu;
+const ADULT_RE = unicodeRe('(^|[^\\p{L}])(adult[oa]?s?|xxx|porn\\p{L}*|er[oó]tic\\p{L}*|hentai)(?!\\p{L})|18\\s*\\+|\\+\\s*18', 'i',
+  '(^|[^A-Za-z\\u00C0-\\u024F])(adult[oa]?s?|xxx|porn[A-Za-z\\u00C0-\\u024F]*|er[oó]tic[A-Za-z\\u00C0-\\u024F]*|hentai)(?![A-Za-z\\u00C0-\\u024F])|18\\s*\\+|\\+\\s*18');
 const isAdultName = n => ADULT_RE.test(n) && !/adult\s*swim/i.test(n);
 
 let api = null;

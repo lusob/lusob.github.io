@@ -19,8 +19,12 @@ export function ago(sec) {
 
 export const isNew = (sec, days = 7) => sec > 0 && Date.now() / 1000 - sec < days * DAY;
 
+// Letters of any script where the browser knows them (\p{…}: Firefox 78+), else the Latin, Greek and Cyrillic ones.
+export const unicodeRe = (src, flags, fallback) => { try { return new RegExp(src, flags + 'u'); } catch { return new RegExp(fallback, flags); } };
+const NOT_WORD = unicodeRe('[^\\p{L}\\p{N} ]', 'g', '[^0-9A-Za-z\\u00C0-\\u024F\\u0370-\\u03FF\\u0400-\\u04FF ]');
+
 export function initials(name) {
-  return esc(String(name).replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase());
+  return esc(String(name).replace(NOT_WORD, ' ').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase());
 }
 
 let toastTimer;

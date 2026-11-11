@@ -143,3 +143,5 @@ Los ficheros son:
 - `recorder/`: el grabador.
 
 Al publicar cambios, sube el número de `?v=` de los imports y `VERSION` en `js/app.js`. Si no, algunos navegadores (el del Tesla, por ejemplo) siguen usando la versión antigua guardada en caché.
+
+Los navegadores que no entienden el JavaScript actual (Firefox 68 en tablets con Android 4.4, por ejemplo) cargan `js/legacy.js` y `css/legacy.css` en su lugar. `js/legacy.js` es la misma app traducida a JavaScript antiguo con [esbuild](https://esbuild.github.io/): regenérala con `tools/legacy.sh` después de cada cambio en `js/` y del cambio de versión, antes de publicar.

@@ -4,8 +4,8 @@
 // they shrink to a comfortable minimum and the grid scrolls; tiles on screen are scanned first.
 // Channels without signal can be hidden.
 
-import { startEngine, resetVideo } from './engines.js?v=20261110a';
-import { esc, initials } from './ui.js?v=20261110a';
+import { startEngine, resetVideo } from './engines.js?v=20261111a';
+import { esc, initials } from './ui.js?v=20261111a';
 
 const LOAD_TIMEOUT = 20;     // s to get a picture before marking the channel as "no signal"
 const GAP = 600;             // ms between streams so the server frees the connection
@@ -32,7 +32,8 @@ export class Mosaic {
       const t = e.target.closest('[data-i]');
       if (t) this.opt.onOpen(this.items, +t.dataset.i);
     });
-    new ResizeObserver(() => { if (!this.el.hidden) this.fit(); }).observe(el);
+    const fit = () => { if (!this.el.hidden) this.fit(); };
+    if (window.ResizeObserver) new ResizeObserver(fit).observe(el); else addEventListener('resize', fit);
     this.io = new IntersectionObserver(entries => {
       for (const e of entries) {
         const i = +e.target.dataset.i;
