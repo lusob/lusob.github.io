@@ -27,7 +27,7 @@ Each film is narrated in English and in Spanish over one single cut. There are n
 ## What I learned
 
 - **Generating is easy; matching is hard.** A shot that does not show what the narration says right then is worse than no shot. When one does not fit, the first thing to try is removing it and letting its neighbour run longer, not searching for a replacement.
-- **Stock footage is a trap.** Watermarks (even faint ones), people who are not in the story, generic keyboards, code from the wrong decade. I ended up with a list of what counts as a bad shot, and the editor (also Claude) gets it with every selection.
+- **Stock footage is a trap.** Watermarks (even faint ones), people who are not in the story, generic keyboards, code from the wrong decade. I ended up filtering the stock agencies out of the search altogether and keeping a list of what counts as a bad shot.
 - **Show the real thing.** When the narration says "on Hacker News", the screen shows that thread. It does more for credibility than any stock shot.
 - **Labels beat vibes.** Forcing every claim in the dossier to be marked solid, disputed or debunked changed what ended up in the scripts more than any prompt tweak did.
 - **A review tool pays for itself.** Watching a film once at full speed is not enough to find the ten shots that are wrong. A page that lists them with their candidates is.
@@ -42,6 +42,6 @@ The scripts and the voices are AI, and the dossier checking is not infallible: i
 
 ## Process
 
-I use Claude Code on the desktop. My own manual work was: creating the API keys (ElevenLabs, Pixabay, Cloudflare), buying the domain, and reviewing every film shot by shot on the review page. Same spirit as Andrej Karpathy's [HackerTube](https://karpathy.bearblog.dev/hacker-tube/): describe what you want, and let the agent build the thing.
+I use Claude Code on the desktop. My own manual work was: creating the API keys (ElevenLabs, Pixabay, Cloudflare), getting the domain, and reviewing every film shot by shot on the review page. Same spirit as Andrej Karpathy's [HackerTube](https://karpathy.bearblog.dev/hacker-tube/): describe what you want, and let the agent build the thing.
 
 — [@lusob](https://x.com/lusob)
