@@ -4,8 +4,6 @@ title: HN DOCS
 description: A short documentary for each of the most popular stories on Hacker News.
 ---
 
-<!-- DRAFT. Edit freely. Publish it only once hndocs.org is live and the repo link below exists. -->
-
 # HN DOCS
 
 **A short documentary for each of the most popular stories on Hacker News.** [hndocs.org](https://hndocs.org) · [code](https://github.com/lusob/hn-docs)
