@@ -17,15 +17,6 @@
 ![Solr](https://img.shields.io/badge/Solr-D9411E?logo=apachesolr&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white)
 
-## Featured projects
-
-| | |
-|---|---|
-| **[HN DOCS](https://hndocs.org)** | A short, narrated documentary for each of the most popular stories on Hacker News, in English and Spanish. [Article](https://lusob.github.io/hn-docs/) · [Code](https://github.com/lusob/hn-docs) |
-| **[IPTV web](https://lusob.github.io/iptv/)** | An IPTV player for Xtream Codes accounts in plain HTML, CSS and JavaScript. Runs on phones, desktops, TVs and cars. |
-| **[Automated Machine Learning with AutoKeras](https://www.amazon.com/Automated-Machine-Learning-AutoKeras-accessible/dp/1800567642)** | Book on automated machine learning with AutoKeras. |
-| **[Subzin](http://www.subzin.com)** | Movie quotes search engine: more than 80M rows and 600K unique users a month. Sold to a US company in 2017. |
-
 ## Work experience
 
 **Senior AI Engineer at bp**, Oct 2025 – Present
@@ -103,6 +94,12 @@ and algorithm obtained by training neural networks).
 * [Subzin](http://www.subzin.com): It is a Movie Quotes Search Engine. In this project I am making index optimization tests, performance analysis, scalability issues, a/b testing and SEO (DB: > 80M rows, Traffic: >600K unique users/month, SEO: >450K organic users). I sold the project to an american company in 2017
 * [QuoDB](http://quodb.com): Single page app version of subzin (implemented with backbone for the frontend and
 Restler for the json API)
+* [gym-ple](https://github.com/lusob/gym-ple) (71 ★, 29 forks): use the PyGame Learning Environment as an OpenAI Gym environment, so reinforcement learning agents can train on simple games.
+* [gym-tetris](https://github.com/lusob/gym-tetris) (27 ★, 13 forks): a Tetris environment for OpenAI Gym.
+* [maiker-cli](https://github.com/lusob/maiker-cli) (70 ★, 10 forks): command-line utility that generates a code project from a prompt using ChatGPT.
+* [django-ide](https://github.com/lusob/django-ide) (41 ★, 10 forks): a web based IDE made with HTML5 and JavaScript to develop Django apps.
+* [videotracker.js](https://github.com/lusob/videotracker.js) (51 ★, 8 forks): video tracking with JavaScript.
+* [f1mapp](https://github.com/lusob/f1mapp) (26 ★, 8 forks): Formula 1 live timing map that shows the drivers' positions in real time.
 * Open source projects and experiments: https://github.com/lusob
 
 ## Certified education
